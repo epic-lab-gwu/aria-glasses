@@ -206,10 +206,9 @@ Always start from `aria_gen2 --help`.
 ## 13. Open questions
 
 1. Are gaze / hands / VIO written into the VRS, or stream-only? The docs list them in the recording profile table with rates but never say where they land. If stream-only: hands recoverable via MPS, but eye gaze has no offline path on Gen 2. Settle with `vrs_inspect.py` on a real recording.
-2. Eye gaze output (yaw/pitch/vergence) not yet observed — raw ET camera images confirmed, computed estimate not.
-3. Ubuntu version on the laptop.
-4. Whether `aria_streaming_viewer` and `stream_audit.py` can bind port 6768 at the same time.
-5. Real profile-listing command on this SDK build.
+2. Ubuntu version on the laptop.
+3. Whether `aria_streaming_viewer` and `stream_audit.py` can bind port 6768 at the same time.
+4. Real profile-listing command on this SDK build.
 
 ## 14. Gotchas
 
