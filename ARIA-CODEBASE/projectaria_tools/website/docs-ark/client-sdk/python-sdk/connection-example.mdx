@@ -1,0 +1,73 @@
+---
+sidebar_position: 2
+title: Connection Example
+---
+
+# Connection Example
+
+Connect to an already-authenticated device, optionally picking one out of several.
+
+**Script:** `device_connect.py` ([export the samples](/ark/client-sdk/python-sdk/python-interface#export-example-code) to get it)
+
+## Prerequisites
+
+- [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+- Device connected via USB and [authenticated](/ark/client-sdk/authentication)
+
+:::caution One-Time Setup: Device Authentication Required
+`device_client.connect()` **fails** until you have run `aria_gen2 auth pair` once for this device-PC pair. See [Device Authentication](/ark/client-sdk/authentication).
+:::
+
+## Run it
+
+```bash
+# First available device
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_connect.py
+
+# A specific device
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_connect.py --serial 1M0YDB5H7B0020
+```
+
+Get serial numbers from `aria_gen2 device list`.
+
+## Worth knowing
+
+**Device selection happens on `connect()`, not on the client config.** This is the most common mistake here, because the two objects have similar names and only one of them picks the device.
+
+`DeviceClientConfig` holds client-wide settings, applied once and unrelated to *which* device you reach:
+
+```python
+config = sdk_gen2.DeviceClientConfig()
+config.reconnection_attempts = 2         # default
+config.enable_device_monitoring = False  # default
+device_client.set_client_config(config)
+```
+
+`DeviceTarget` picks the device, and is passed to `connect()`:
+
+```python
+# First available device
+device = device_client.connect()
+
+# By serial
+device = device_client.connect(sdk_gen2.DeviceTarget(serial="1M0YDB5H7B0020"))
+
+# By IP
+device = device_client.connect(sdk_gen2.DeviceTarget(ip="192.168.1.42"))
+```
+
+An empty `DeviceTarget` — the default — means "first available". `DeviceClientConfig` has no `device_serial` attribute; assigning one raises `AttributeError`.
+
+**Discovery spans both transports in one pass.** `connect()` looks for devices over mDNS *and* over USB simultaneously, so a device is found whether it is reachable over the network, over USB, or both. Devices visible on both paths are de-duplicated by serial. When several devices are discovered and you did not name one, every serial is reported so you can disambiguate.
+
+## Troubleshooting
+
+**Connection failed, device not found.** Work through: `aria_gen2 device list` (is it visible?), `aria_gen2 auth check` (is it paired?), `aria_doctor` (are ports and USB networking set up?). Then try a different USB port or cable.
+
+**Wrong serial number.** Serial numbers are case-sensitive. Copy the exact string from `aria_gen2 device list`.
+
+## Next steps
+
+* [Recording Example](/ark/client-sdk/python-sdk/recording-example) — capture data on the connected device
+* [Streaming Example](/ark/client-sdk/python-sdk/streaming-example) — process sensor data live
+* [All Python SDK examples](/ark/client-sdk/python-sdk/python-interface)

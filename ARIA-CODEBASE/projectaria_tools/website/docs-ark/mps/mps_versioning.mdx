@@ -1,0 +1,34 @@
+---
+sidebar_position: 50
+title: MPS Service Versions
+---
+## Overview
+
+The versioning system for MPS services adheres to the following format:
+1. **Major Number**: Indicates significant changes that are not backward compatible. This number is incremented when there are major updates or changes in the API that could affect existing functionalities.
+2. **Minor Number**: Represents minor updates or improvements that are backward compatible. This number is incremented when additional features or minor improvements are introduced.
+3. **Bugfix Number**: Used for small fixes and patches to address issues without affecting the overall functionality. This number is incremented when bugs are fixed.
+
+## Current MPS Services and Versions:
+
+### SLAM (Simultaneous Localization and Mapping) Service
+
+**Current version: 2.0.1**
+
+Description: Project Aria's [MPS SLAM service](/technical-specs/mps/data_formats/slam/data_formats) provides the trajectory in 6DoF, a semi-dense point cloud, and the online sensor calibration.
+
+### Multi-SLAM Service
+
+**Current version: 2.0.1**
+
+Description: Project Aria's Multi-SLAM service processes two or more recordings, captured in the same space, together to generate [MPS SLAM outputs](/technical-specs/mps/data_formats/slam/data_formats) in a shared coordinate frame.
+
+### Hand Tracking Service
+
+**Current version: 3.2.0**
+
+Description: Project Aria's [MPS Hand Tracking service](/technical-specs/mps/data_formats/hand_tracking/hand_tracking_outputs) provides the coordinates of 21 hand landmark positions, and the full 6DoF transform from the hand frame (origin at wrist position) to the device frame.
+
+
+### Summary
+This versioning system ensures that each MPS service is consistently updated and maintained, providing reliable and efficient performance for Project Aria glasses.

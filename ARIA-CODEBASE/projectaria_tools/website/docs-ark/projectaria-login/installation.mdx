@@ -1,0 +1,85 @@
+---
+sidebar_position: 2
+title: Installation
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Installation
+
+## PyPI Install (Recommended)
+
+`projectaria_login` is published to PyPI as `projectaria-login`. Install it in a virtual environment:
+
+<Tabs groupId="operating-systems">
+<TabItem value="unix" label="Linux & macOS">
+
+```bash
+python3 -m venv ~/projectaria_gen2_python_env
+source ~/projectaria_gen2_python_env/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install projectaria-login
+```
+
+</TabItem>
+<TabItem value="windows" label="Windows">
+
+```powershell
+python -m venv $env:USERPROFILE\projectaria_gen2_python_env
+& $env:USERPROFILE\projectaria_gen2_python_env\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install projectaria-login
+```
+
+</TabItem>
+</Tabs>
+
+Verify installation:
+
+```bash
+projectaria_login --help
+```
+
+Expected output shows `login`, `verify`, and `logout` subcommands.
+
+## Keyring Prerequisites
+
+`projectaria_login` stores tokens securely in your operating system's credential manager. No additional system packages are required on macOS or Windows.
+
+:::note Prerequisite for keyring token storage on Linux
+
+On Linux, secure token storage needs a Secret Service provider:
+
+| Distro | Package to install |
+|---|---|
+| Ubuntu / Debian | `sudo apt install gnome-keyring` (or, for KWallet users, `sudo apt install kwalletmanager`) |
+| Fedora | `sudo dnf install gnome-keyring` |
+
+:::
+
+Start the keyring daemon once per session if running headless:
+
+```bash
+eval $(gnome-keyring-daemon --start)
+```
+
+## Supported Platforms
+
+| OS / Platform                 | OS / Distro Details                                                | Aria Gen2 Support | Supported Python Versions |
+| :---------------------------- | :----------------------------------------------------------------- | :----------------------------------------- | :------------------------ |
+| Linux (x64)                   | Ubuntu, Fedora and others. Tokens stored via Secret Service / GNOME Keyring / KWallet | ✅ Supported                  | 3.9 – 3.12               |
+| Linux (ARM64 / aarch64)       | Same keyring backends as x64                                          | ✅ Supported                               | 3.9 – 3.12              |
+| macOS (Apple Silicon / ARM64) | Tokens stored in the macOS Keychain                                   | ✅ Supported                               | 3.9 – 3.12              |
+| macOS (Intel / x64)           | Tokens stored in the macOS Keychain                                   | ✅ Supported                               | 3.9 – 3.12              |
+| Windows (x64)                 | Tokens stored in the Windows Credential Manager                       | ✅ Supported                               | 3.9 – 3.12              |
+
+:::note This matrix is wider than the rest of the toolchain
+`projectaria-login` is pure Python — no compiled wheel, so no platform, architecture or glibc restriction of its own. That is why Windows, Intel Macs and ARM64 Linux are supported here but not on the other pages.
+
+Installed alongside the Client SDK, the stricter constraints win: Apple Silicon or x64 Linux only, and Python **3.10 – 3.12** rather than 3.9. See [Client SDK supported platforms](/ark/client-sdk/start#supported-platforms).
+:::
+
+## Next Steps
+
+* [CLI Usage](/ark/projectaria-login/cli-usage) — log in and out from terminal

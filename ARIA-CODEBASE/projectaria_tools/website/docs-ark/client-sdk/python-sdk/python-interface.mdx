@@ -1,0 +1,260 @@
+---
+sidebar_position: 0
+title: Python SDK Examples
+---
+
+# Python SDK Examples
+
+The ClientSDK provides a comprehensive Python interface for programmatic control of your Aria Gen2 device. This page introduces the Python SDK and guides you through setting up the example code.
+
+## Overview
+
+The Python SDK enables you to:
+* **Authenticate devices** programmatically with your PC
+* **Establish connections** to devices via USB or wirelessly
+* **Control recording** - Start, stop, and download recordings
+* **Manage streaming** - Stream data with custom callbacks for real-time processing
+* **Send commands** - Control device features like text-to-speech
+
+---
+
+## Prerequisites
+
+Before using the Python SDK, ensure you have:
+* [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+* Device connected via USB and [authenticated](/ark/client-sdk/authentication)
+
+:::caution One-Time Setup: Device Authentication Required
+Before running **any** Python SDK examples that control the device (recording, streaming, TTS, etc.), you **must** authenticate your device by running `aria_gen2 auth pair` (see [Device Authentication](/ark/client-sdk/authentication)). This only needs to be done **once** per device-PC combination, but **all `device_client.connect()` calls will fail without it**.
+:::
+
+### Export Example Code
+
+The SDK includes example scripts that demonstrate common use cases. Extract them using:
+
+```bash
+# Export example codes
+python -m aria.extract_sdk_samples --output ~/Downloads/
+```
+
+This creates a `projectaria_client_sdk_samples_gen2` directory containing all example scripts:
+
+```bash
+ls ~/Downloads/projectaria_client_sdk_samples_gen2
+
+AriaRaw.msg                         # Custom ROS2 message definition
+aria_video_focused_rerun_0.33.rbl   # Video-focused aria_streaming_viewer layout
+device_auth.py                      # Authentication example
+device_connect.py                   # Connection example
+device_push_audio.py                # Host-to-device audio over WebRTC
+device_raw_streaming.py             # Streaming with raw message callbacks
+device_record.py                    # Recording example
+device_streaming.py                 # Streaming with typed callbacks
+device_tts.py                       # Text-to-speech example
+device_webrtc_streaming.py          # WebRTC streaming example
+replay_vrs.py                       # Offline replay from a VRS recording
+ros2_publisher_example.py           # ROS2 publisher node
+ros2_subscriber_example.py          # ROS2 subscriber node
+```
+
+Load the blueprint with `aria_streaming_viewer --blueprint <path>`, or drop it onto a running Rerun window — see [Custom Layout with a Rerun Blueprint](/ark/client-sdk/streaming#custom-layout-with-a-rerun-blueprint).
+
+The same command also writes a `projectaria_client_sdk_samples` directory alongside it, holding the Aria **Gen 1** samples. The pages below all describe the Gen 2 set.
+
+---
+
+## Available Examples
+
+Each page below walks through one of the exported scripts.
+
+| # | Page | Script | What it adds beyond the code |
+|---|------|--------|------------------------------|
+| 1 | [Authentication](/ark/client-sdk/python-sdk/auth-example) | `device_auth.py` | Auth vs connection; what the Companion App approval actually needs |
+| 2 | [Connection](/ark/client-sdk/python-sdk/connection-example) | `device_connect.py` | `DeviceClientConfig` vs `DeviceTarget` — which one picks the device |
+| 3 | [Recording](/ark/client-sdk/python-sdk/recording-example) | `device_record.py` | Profile defaults, `recording_info()` returning `None`, conflict actions |
+| 4 | [Streaming](/ark/client-sdk/python-sdk/streaming-example) | `device_streaming.py` | Callback signature table, remote-server TLS setup, feeding a model |
+| 5 | [WebRTC Streaming](/ark/client-sdk/python-sdk/webrtc-streaming-example) | `device_webrtc_streaming.py`, `device_push_audio.py` | `--listen` topologies, reconnect-before-teardown, `push_audio()` |
+| 6 | [Raw Streaming](/ark/client-sdk/python-sdk/raw-streaming-example) | `device_raw_streaming.py` | Message-type to converter map; the two SLAM frame IDs |
+| 7 | [Multi-Device Streaming](/ark/client-sdk/python-sdk/multi-device-streaming-example) | *(no bundled script)* | The `device_id` parameter, handler factory, TDM from receivers only |
+| 8 | [Offline Replay](/ark/client-sdk/python-sdk/replay-example) | `replay_vrs.py` | Replay as a CI fixture; the two distinct failure modes |
+| 9 | [Text-to-Speech](/ark/client-sdk/python-sdk/text-to-speech-example) | `device_tts.py` | `render_tts()` is asynchronous; `stop_tts()` |
+| 10 | [ROS2](/ark/client-sdk/python-sdk/ros2-example) | `ros2_publisher_example.py`, `ros2_subscriber_example.py` | The whole workspace setup — none of it is in the scripts |
+
+Each page assumes you have the script open next to it. They cover what the code
+cannot tell you: prerequisites, non-obvious behavior, and what goes wrong.
+
+---
+
+## Common Python SDK Patterns
+
+### Basic Device Connection Pattern
+
+Most scripts follow this basic pattern:
+
+```python
+import aria.sdk_gen2 as sdk_gen2
+
+# Create device client
+device_client = sdk_gen2.DeviceClient()
+
+# Optional client-wide settings: reconnection attempts, device monitoring
+config = sdk_gen2.DeviceClientConfig()
+device_client.set_client_config(config)
+
+# Connect to the first available device
+device = device_client.connect()
+print(f"Connected to device: {device.connection_id()}")
+
+# Use device for recording, streaming, etc.
+```
+
+To target one device out of several, pass a `DeviceTarget` to `connect()`:
+
+```python
+# By serial
+device = device_client.connect(sdk_gen2.DeviceTarget(serial="1M0YDB5H7B0020"))
+
+# By IP
+device = device_client.connect(sdk_gen2.DeviceTarget(ip="192.168.1.42"))
+```
+
+:::caution `DeviceClientConfig` does not select the device
+`DeviceClientConfig` carries client-wide settings only, such as `reconnection_attempts` and `enable_device_monitoring`. Assigning `config.device_serial` raises `AttributeError` — device selection goes through `DeviceTarget` on `connect()`.
+:::
+
+---
+
+### Error Handling Pattern
+
+Always wrap device operations in try-except blocks:
+
+```python
+try:
+    device = device_client.connect()
+    print(f"Successfully connected to device {device.connection_id()}")
+except Exception as e:
+    print(f"Failed to connect: {e}")
+    return
+```
+
+---
+
+### Configuration Pattern
+
+Device operations (recording, streaming) typically require configuration:
+
+```python
+# Recording configuration
+recording_config = sdk_gen2.RecordingConfig()
+recording_config.profile_name = "profile9"
+recording_config.recording_name = "my_recording"
+device.set_recording_config(recording_config)
+
+# HTTP streaming configuration
+streaming_config = sdk_gen2.HttpStreamingConfig()
+streaming_config.profile_name = "mp_streaming_demo"
+device.set_streaming_config(streaming_config)
+
+# WebRTC streaming configuration
+webrtc_config = sdk_gen2.WebRtcStreamingConfig()
+webrtc_config.profile_name = "low_latency_streaming"
+webrtc_config.signaling_url = "tcp://example.com:8443"
+device.set_webrtc_streaming_config(webrtc_config)
+
+# Optional: sync the device clock via NTP before the session starts. Use this when a
+# signaling server rejects the device for timestamp skew. The device must be able to
+# reach an NTP server over Wi-Fi, and the session fails to start if the sync fails.
+device.set_ntp_sync(True)
+```
+
+---
+
+### Per-Device Identity in Callbacks (Multi-Device)
+
+When streaming from multiple devices through a single server, declare an optional `device_id` parameter on any callback to receive the source device's serial:
+
+```python
+def rgb_callback(image_data, image_record, device_id: str | None = None) -> None:
+    serial = device_id or "unknown"
+    print(f"[{serial}] RGB frame")
+
+handler.register_rgb_callback(rgb_callback)
+```
+
+The SDK detects the `device_id` parameter via `inspect.signature()` at registration time. Existing single-device callbacks (no `device_id`) continue to work unchanged. See [Multi-Device Streaming Example](/ark/client-sdk/python-sdk/multi-device-streaming-example) for a complete walkthrough.
+
+**Single-device** recording and streaming are fully supported from Python — `device.set_recording_config()` + `device.start_recording()` and `device.set_streaming_config()` + `device.start_streaming()`. See [Recording Example](/ark/client-sdk/python-sdk/recording-example) and [Streaming Example](/ark/client-sdk/python-sdk/streaming-example).
+
+**Multi-device orchestration** — starting/stopping recordings or streams across all connected devices in one call — is exposed only through the CLI by design (`aria_gen2 recording start --all` / `streaming start --all`). The Python SDK exposes the per-device primitives and receiver-side multi-device support (factory-per-connection in `AriaGen2HttpServer`, plus the optional `device_id` callback parameter for per-device identity); combine the CLI for orchestration with a Python receiver for end-to-end multi-device pipelines.
+
+---
+
+## WebRTC Streaming Transport
+
+The SDK supports **WebRTC** as a first-class streaming transport alongside HTTP, through a *unified* receiver interface. Switching transport is a **swap of the receiver class and its config only** — every `register_*_callback` name and signature is identical, and your callbacks receive the same typed sensor objects (`ImageData`, `AudioData`, `MotionData`, `EyeGaze`, `hand_tracking.HandTrackingResult`, `FrontendOutput`, ...). H.265 image frames are decoded in Python by the same `ImageDecoder` used for HTTP.
+
+| | HTTP | WebRTC |
+|---|---|---|
+| Receiver class | `receiver.StreamReceiver()` | `receiver.WebRtcStreamReceiver()` |
+| Transport config | `sdk_gen2.HttpServerConfig()` | `sdk_gen2.WebRtcConfig()` |
+| Lifecycle | `set_server_config` / `start_server` / `stop_server` / `is_connected` | *identical* |
+| `register_*_callback` | Yes | Yes (same names & signatures) |
+| Typed sensor objects | Yes | *identical* |
+
+For a runnable version — device-side config, signaling topologies, teardown — see the [WebRTC Streaming Example](/ark/client-sdk/python-sdk/webrtc-streaming-example).
+
+### WebRtcConfig Fields
+
+`WebRtcConfig` (from `aria.sdk_gen2`) configures how the receiver reaches the device. For same-network streaming, set `listen_port` for a direct peer-to-peer connection. For cross-network streaming, point the signaling fields at a signaling server (with optional STUN/TURN for NAT traversal).
+
+Each field has a matching `aria_streaming_viewer` flag, listed here so the two surfaces stay readable side by side — see [WebRTC Viewer Flags](/ark/client-sdk/webrtc#webrtc-viewer-flags).
+
+| Field | Viewer flag | Description |
+|---|---|---|
+| `signaling_url` | `--signaling-url <url>` | Signaling server as one `<scheme>://<host>:<port>` URL, scheme `tcp`, `https` or `http` — the same spelling the device takes. Selects the signaling transport, and is the only way to ask for TLS. Supersedes `signaling_host`/`signaling_port`. |
+| `signaling_host` | `--signaling-host <host>` | Hostname of the signaling server (cross-network rendezvous), on plain TCP. Leave unset for same-network direct P2P. |
+| `signaling_port` | `--signaling-port <port>` | Port of the signaling server. |
+| `ca_root` | `--ca-root <root>` | Trust anchor used to verify the signaling server's certificate on an `https` URL: a named root (`Public`, `MetaProd`, `MetaCloud`, `Test`, matched case-insensitively) or a path to a PEM CA bundle. Defaults to `Public`, the system root store — which is what a publicly-issued certificate chains to. Inert on `tcp`. |
+| `verify_server_certificates` | `--no-verify-server-certs` | Whether that certificate is verified at all. On by default; the opt-out accepts **any** certificate, including an attacker's, so it is rejected for anything but a loopback signaling host (`localhost`, `127.0.0.1`, `::1`). Trust a remote self-signed deployment with `ca_root` instead. |
+| `listen_port` | `--listen <port>` | Local port for direct peer-to-peer connections on the same network. |
+| `stun` | `--stun <url>` | STUN server URL for NAT traversal. |
+| `turn` | `--turn <url>` | TURN server URL for relayed connectivity when direct/STUN fails. |
+| `turn_username` | `--turn-username <user>` | Username for the TURN server. |
+| `turn_password` | `--turn-password <pw>` | Credential for the TURN server. |
+| `auth_token` | `--auth-token <token>` | Authentication token presented to the signaling server. |
+| `room_id` | `--room <id>` | Signaling room the device and receiver rendezvous in. |
+| `room_password` | `--room-password <pw>` | Password protecting the signaling room. |
+| `enable_audio` | *(none)* | Enable the audio track over the WebRTC connection. The viewer leaves this at its default. |
+
+### WebRTC-only Receiver Methods
+
+Beyond the shared lifecycle, `WebRtcStreamReceiver` adds a few methods that only make sense over a bidirectional WebRTC connection:
+
+| Method | Description |
+|---|---|
+| `set_mic_muted(muted: bool)` | Mute (`True`) or unmute (`False`) the receiver's outbound microphone. |
+| `set_volume(volume: float)` | Playback gain for the incoming audio track: `0.0` = silent, `1.0` = unity (default); values `> 1.0` amplify. |
+| `get_waveform() -> (samples: list[float], peak: float)` | Recent incoming-audio samples (each in `[-1, 1]`) and their peak magnitude — e.g. to drive a level meter. Empty / `0.0` when audio is disabled. |
+| `push_audio(pcm: list[float], sample_rate: int, channels: int)` | Send PCM (float samples in `[-1, 1]`) to the device over the WebRTC audio uplink. Any sample rate / channel count is accepted — it is downmixed to mono, resampled to 16 kHz, and sent as the device uplink. While pushed audio is active it **replaces** the host microphone on the uplink, so it plays even with the mic muted. Requires `enable_audio`. Resampling is plain linear interpolation with no anti-alias filter, so downsampling wideband audio (e.g. 44.1/48 kHz) can alias — supply 16 kHz mono for best fidelity. |
+
+The RTP video streams carry host receive time rather than device capture time — see [the caveat on the WebRTC page](/ark/client-sdk/python-sdk/webrtc-streaming-example) before correlating images with sensors.
+
+See the [WebRTC Streaming Example](/ark/client-sdk/python-sdk/webrtc-streaming-example) for a complete walkthrough and [WebRTC Streaming](/ark/client-sdk/webrtc) for the `aria_streaming_viewer --transport webrtc` workflow.
+
+---
+
+## Next Steps
+
+1. **Start with basics**: Begin with the [Authentication Example](/ark/client-sdk/python-sdk/auth-example)
+2. **Progress through examples**: Work through each example in order
+3. **Experiment**: Modify the examples to fit your use case
+4. **Build custom applications**: Use the patterns to create your own scripts
+
+---
+
+## Additional Resources
+
+* [CLI Commands](/technical-specs/client-sdk/cli) - Command-line interface reference
+* [Recording Guide](/ark/client-sdk/recording) - Detailed recording documentation
+* [Streaming Guide](/ark/client-sdk/streaming) - Detailed streaming documentation
+* [Troubleshooting](/ark/support/sdk) - Common issues and solutions

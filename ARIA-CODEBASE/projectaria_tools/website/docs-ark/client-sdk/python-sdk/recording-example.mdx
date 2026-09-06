@@ -1,0 +1,71 @@
+---
+sidebar_position: 3
+title: Recording Example
+---
+
+# Recording Example
+
+Start a recording on the device, stop it after a fixed duration, then download the VRS and its thumbnails.
+
+**Script:** `device_record.py` ([export the samples](/ark/client-sdk/python-sdk/python-interface#export-example-code) to get it)
+
+## Prerequisites
+
+- [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+- Device connected via USB and [authenticated](/ark/client-sdk/authentication)
+
+:::caution One-Time Setup: Device Authentication Required
+All device operations fail until you have run `aria_gen2 auth pair` once for this device-PC pair. See [Device Authentication](/ark/client-sdk/authentication).
+:::
+
+## Run it
+
+```bash
+# Record for the default 10 seconds
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_record.py
+
+# Record for 30 seconds and download into a chosen directory
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_record.py \
+    --duration 30 --output ~/Downloads/
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--duration <sec>` | `10` | How long to record before stopping |
+| `--output <path>` | current directory | Where the recording and thumbnails are downloaded |
+
+## Worth knowing
+
+**Leaving `profile_name` unset uses the device's default profile,** which `aria_gen2 device status` reports as `default_recording_profile`. The script sets `profile9` explicitly. Beyond the profile, `RecordingConfig` also carries `custom_profile` (a profile as JSON, instead of a named one) and `recording_type` (`RECORDING_TYPE_REAL`, `_TEST` or `_PROTOTYPE`). For what each profile captures, see the [Profiles Technical Specification](/technical-specs/device/profile).
+
+**`recording_info()` prints — it does not return.** Despite what the shipped type stub says, `device.recording_info(uuid)` logs the recording's name, size and metadata and returns `None`. To get a `RecordingInfo` object in Python, filter `list_recordings()` instead:
+
+```python
+recordings = device.list_recordings()
+info = next(r for r in recordings if r.name == uuid)
+print(info.name, info.size, info.metadata)
+```
+
+**Downloading has a few more options than the script uses.** `download_all_recordings(output_path)` grabs everything on the device in one call, and `download_all_thumbnails(uuid, output_dir)` fetches one recording's thumbnails. On a filename collision the behavior is whatever you set with `device.set_file_conflict_action(...)` — `KEEP_BOTH`, `REPLACE` or `STOP`.
+
+**On-device recording and streaming are mutually exclusive,** with one exception: a WebRTC session can record on-device at the same time via `start_streaming(record=True)`. See the [WebRTC Streaming Example](/ark/client-sdk/python-sdk/webrtc-streaming-example).
+
+## Viewing what you recorded
+
+```bash
+aria_rerun_viewer --vrs ~/Downloads/<recording_name>.vrs
+```
+
+For processing the data, see the [Project Aria Tools documentation](https://facebookresearch.github.io/projectaria_tools/).
+
+## Troubleshooting
+
+**`start_recording()` fails or hangs.** Usually a recording is already in progress, or the device is streaming. Check with `device.get_recording_state()` and `device.is_streaming()`, stop whatever is running, then retry.
+
+**Recording is not allowed.** `device.status().is_recording_allowed` reports whether the device will accept a new recording at all — a full disk or thermal mitigation can block it.
+
+## Next steps
+
+* [Streaming Example](/ark/client-sdk/python-sdk/streaming-example) — process data live instead of after the fact
+* [Machine Perception Services](/ark/mps/start) — offline SLAM, eye gaze and hand tracking on your recordings
+* [All Python SDK examples](/ark/client-sdk/python-sdk/python-interface)

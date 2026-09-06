@@ -1,0 +1,201 @@
+---
+sidebar_position: 10
+title: ROS2 Example (Advanced Users)
+---
+
+# ROS2 Integration Example (Advanced Users)
+
+Publish Aria sensor data onto ROS2 topics and consume it in a subscriber node, so Aria data can flow through standard ROS2 tooling and into a distributed robotics system.
+
+**Scripts:** `ros2_publisher_example.py`, `ros2_subscriber_example.py`, `AriaRaw.msg` ([export the samples](/ark/client-sdk/python-sdk/python-interface#export-example-code) to get them)
+
+Most of this page is the ROS2 workspace setup around those scripts. That part is not in the scripts, and the scripts will not run without it.
+
+## Prerequisites
+
+- [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+- Device connected via USB and [authenticated](/ark/client-sdk/authentication)
+- ROS2 installed (Humble or later), with a workspace such as `~/ros2_ws`
+- A C++ compiler, for building the custom message package
+- Basic familiarity with ROS2 nodes, topics and messages
+
+:::caution One-Time Setup: Device Authentication Required
+All device operations fail until you have run `aria_gen2 auth pair` once for this device-PC pair. See [Device Authentication](/ark/client-sdk/authentication).
+:::
+
+---
+
+## The `AriaRaw` message type
+
+Aria data is carried over ROS2 as a minimal binary wrapper rather than converted to `sensor_msgs/Image`, `sensor_msgs/Imu` and friends:
+
+```msg
+int64 id
+uint8[] payload
+```
+
+- `id` — the Aria `MessageType` identifier, which says what the payload is
+- `payload` — the sensor data, still in its native FlatBuffer form
+
+Four reasons it works this way:
+
+1. **Preserves the original format.** Aria streams FlatBuffers, which are compact and cheap to produce. A custom message keeps that rather than paying for a conversion on the publisher side.
+2. **One message type for every sensor.** Aria Gen 2 has four SLAM cameras, two ET cameras, an RGB camera, IMUs, magnetometer, barometer and more. A single flexible message avoids a publisher/subscriber pair per sensor.
+3. **Future-proof.** New sensors or perception outputs need no change to the ROS2 interface.
+4. **No timestamp loss.** Nanosecond timestamps survive because nothing is reformatted in transit.
+
+The subscriber decodes the payload with the SDK's `OssDataConverter`.
+
+---
+
+## Setup
+
+### 1. Extract the samples
+
+```bash
+python3 -m aria.extract_sdk_samples --output ~/Downloads
+```
+
+`AriaRaw.msg`, `ros2_publisher_example.py` and `ros2_subscriber_example.py` land in `~/Downloads/projectaria_client_sdk_samples_gen2/`.
+
+### 2. Create the custom message package
+
+Follow the [ROS2 custom message tutorial](https://docs.ros.org/en/foxy/Tutorials/Beginner-Client-Libraries/Single-Package-Define-And-Use-Interface.html) to create a C++ package containing `AriaRaw.msg`.
+
+:::danger The package must be named `aria_data_types`
+Both scripts import the message as `from aria_data_types.msg import AriaRaw`. Any other package name fails at import with no useful hint about the real cause.
+:::
+
+Build this package **before** the Python one — the Python package depends on the message types existing.
+
+### 3. Create your Python package
+
+Create a Python ROS2 package (e.g. `py_pubsub`) following the [publisher/subscriber tutorial](https://docs.ros.org/en/foxy/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Py-Publisher-And-Subscriber.html), then drop the Aria scripts in over the defaults:
+
+```bash
+cd ~/ros2_ws/src/py_pubsub/py_pubsub
+cp ~/Downloads/projectaria_client_sdk_samples_gen2/ros2_publisher_example.py publisher_member_function.py
+cp ~/Downloads/projectaria_client_sdk_samples_gen2/ros2_subscriber_example.py subscriber_member_function.py
+```
+
+The filenames must match the entry points in your package's `setup.py`.
+
+### 4. Declare the dependency
+
+Add to `package.xml` in `py_pubsub`:
+
+```xml
+<exec_depend>aria_data_types</exec_depend>
+```
+
+Without it, ROS2 cannot resolve the custom message at runtime and the nodes fail to import it.
+
+### 5. Build
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-select py_pubsub
+```
+
+### 6. Run
+
+:::caution Both terminals need the same `ROS_DOMAIN_ID`
+ROS2 nodes only discover each other within the same domain. Export it in **both** terminals before running anything:
+
+```bash
+export ROS_DOMAIN_ID=0
+```
+:::
+
+```bash
+# Terminal 1 — publisher: connects to the device and starts streaming
+source install/setup.bash
+ros2 run py_pubsub talker
+
+# Terminal 2 — subscriber
+source install/setup.bash
+ros2 run py_pubsub listener
+```
+
+Publisher output:
+
+```
+[INFO] [minimal_publisher]: Received message: ID=SLAM_CAMERA_FRAME, payload length=114353
+[INFO] [minimal_publisher]: Received message: ID=IMU_EVENT, payload length=4896
+[INFO] [minimal_publisher]: Received message: ID=MP_VIO_RESULT, payload length=2048
+```
+
+Subscriber output:
+
+```
+[Calibration] Received device calibration
+[Calibration] Calibration set in converter - VIO, eye gaze, and hand pose decoding enabled
+[IMU] Accel: [9.594, 2.151, 0.401] m/s², Gyro: [-0.001, 0.003, 0.002] rad/s, Count: 16 samples
+[SLAM Camera] Size: 512x512, Timestamp: 5046068223788 ns, Camera ID: 4
+[RGB Camera] Size: 2016x1512, Timestamp: 5048213203431 ns, Camera ID: 64
+[Eye Gaze] Yaw: 0.124 rad, Pitch: -0.056 rad, Depth: 1.234 m
+[Hand Tracking] Left hand: detected, Right hand: not detected
+```
+
+---
+
+## Worth knowing
+
+**Calibration is republished at 10 Hz, not once.** The publisher caches the calibration it receives from the device and re-sends it on a timer, so a subscriber that starts late still gets it. The subscriber gates all processing on `calibration_received` — VIO, eye gaze and hand pose cannot be decoded without calibration, so processing before it arrives would just produce failures.
+
+**SLAM frames arrive under one of two message IDs.** Which one depends on the profile's declared encoding: `SLAM_CAMERA_FRAME` for a compressed (H.265) stream, and `RAW_SLAM_CAMERA_FRAME` for an uncompressed (RAW8) one such as `profile3`. Matching on only one of the pair **silently receives no frames** under profiles using the other encoding — there is no error, the branch just never fires. The subscriber matches both:
+
+```python
+if message_id in (
+    sdk_gen2.MessageType.SLAM_CAMERA_FRAME,
+    sdk_gen2.MessageType.RAW_SLAM_CAMERA_FRAME,
+):
+```
+
+**The payload crosses the boundary as a `memoryview`.** The publisher uses `message.payload.as_memoryview()` rather than `data()`: it is bounds-checked and returns `None` on an empty payload, where `data()` hands back a raw pointer address. Some message types do arrive with empty payloads, which is why the subscriber checks before reconstructing a `SharedMessage`.
+
+**Decoding happens subscriber-side.** The publisher never converts anything — it forwards `id` and `payload` verbatim. All the `OssDataConverter` calls live in the subscriber. See the [Raw Streaming Example](/ark/client-sdk/python-sdk/raw-streaming-example) for the full message-type-to-converter mapping.
+
+---
+
+## Data flow
+
+1. Publisher connects to the Aria device and starts streaming
+2. Device sends calibration → publisher republishes it on `calibration` at 10 Hz
+3. Subscriber receives calibration → configures its `OssDataConverter`
+4. Device sends sensor data → publisher receives it on its HTTP server at `:6768`
+5. Publisher wraps each message as `AriaRaw` → publishes on `aria_raw_message`
+6. Subscriber decodes the payload → processes it
+
+---
+
+## Troubleshooting
+
+**Publisher and subscriber cannot see each other.** Almost always mismatched `ROS_DOMAIN_ID`. Both terminals need the same value exported before the node starts. Confirm with `ros2 node list` — you should see both `minimal_publisher` and `minimal_subscriber`.
+
+**Subscriber receives nothing.** Check the publisher is running and the topics exist:
+
+```bash
+ros2 topic list
+ros2 topic echo /aria_raw_message
+```
+
+Then confirm the device is actually streaming, in the publisher's logs.
+
+**Subscriber receives messages but processes none.** It is still waiting for calibration. Check the publisher's logs for the calibration callback — if the device never sent calibration, the subscriber stays gated.
+
+**Port 6768 already in use.** Something else holds the publisher's HTTP port:
+
+```bash
+sudo lsof -i :6768
+```
+
+Kill it, or change `config.port` in the publisher.
+
+**High message drop rate.** Increase the publisher and subscriber queue sizes, reduce per-callback work, and prefer USB over Wi-Fi.
+
+## Next steps
+
+* [Raw Streaming Example](/ark/client-sdk/python-sdk/raw-streaming-example) — the same raw-message pattern without ROS2
+* [Streaming Example](/ark/client-sdk/python-sdk/streaming-example) — typed callbacks, if you do not need the raw payload
+* [All Python SDK examples](/ark/client-sdk/python-sdk/python-interface)

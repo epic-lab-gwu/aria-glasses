@@ -1,0 +1,173 @@
+---
+sidebar_position: 10
+title: Changelog
+---
+
+# Changelog
+
+## Version 2.3.0
+
+### Breaking Changes
+
+- Neural Band timestamps renamed: `NeuralBandBatch.capture_timestamp_ns` is now `arrival_timestamp_ns`, and the sub-sample `capture_timestamp_ns` is replaced by `wristband_timestamp_ns` plus `device_timestamp_ns` (`Optional[int]`). No silent fallback — old names raise
+- `getT_Device_Cpf()` and `getT_Cpf_Sensor()` take a `CpfType` (`CadBased`, `SvdBased`, `Default`) instead of a `bool useSvd`. Not implicitly convertible from `bool`, so existing call sites must be updated
+
+### New Features
+
+- Neural Band wristband-to-device clock mapping, exposed as `convert_from_wristband_time_to_device_time_ns()`, `convert_from_device_time_to_wristband_time_ns()` and `get_neural_band_emg_sample_period_ns()`. All return `None` when the recording cannot relate the two clocks
+- `CpfType.Default` resolves per generation: CAD on Gen1, SVD on Gen2
+
+### Behavior Changes
+
+- On Gen2, `get_transform_device_cpf()` now returns the SVD-aligned CPF by default, matching how gaze is reported elsewhere in the stack. On-device vs MPS eye gaze agreement improves from 44.05 mrad to 8.74 mrad. Gen1 unchanged
+- EMG sub-samples no longer carry synthesized timestamps. `wristband_timestamp_ns` repeats the packet timestamp; the spread lives in `device_timestamp_ns`
+
+### Bug Fixes
+
+- `getT_Cpf_Sensor()` no longer derives the CPF choice from `getCadValue`, so it composes with `getT_Device_Cpf()` again (was off by 2.53 deg on the unit measured)
+- Fixed the open-source CMake build: `NeuralBandTimeMapper.cpp` was missing from `core/data_provider/CMakeLists.txt`, and the VRS pin predated `vrs::StreamId` becoming a literal type (GitHub PR #394)
+
+### Improvements
+
+- Aria stream identifier constants are now `constexpr`
+
+### Documentation
+
+- Gen2 tutorials restructured onto one axis and renumbered: 1-4 read a recording, 5 reads MPS output, 6-8 cover one algorithm each across both on-device and MPS (VIO and trajectory, hand tracking, eye tracking), 9 covers Neural Band sEMG
+- New eye tracking and Neural Band sEMG tutorials; every tutorial now downloads its own sample data and runs end to end on Colab
+- Website tutorial pages removed in favour of linking the notebooks on GitHub
+- Camera frames logged to Rerun are JPEG compressed, fixing dropped frames past the notebook viewer's 1 GiB budget
+
+---
+## Version 2.2.0
+
+### New Features
+
+- **Official support for ML Eye Tracking (ML ET)**: ML ET is our new machine-learning-based eye-tracking algorithm. It replaces the previous approach and delivers noticeably better gaze quality. `projectaria-tools` now officially supports ML ET results from both sources — gaze computed on-device and recorded into the VRS `eyegaze` stream, and gaze produced by Machine Perception Services (MPS). Both are returned as the same `EyeGaze` structure, so existing code needs no changes: read on-device results with `get_eye_gaze_data_by_index()` and `get_eye_gaze_data_by_time_ns()`, and MPS results with `mps.read_eyegaze()` or `MpsDataProvider`
+- **Neural Band (sEMG) data support**: Aria Gen2 recordings paired with a Neural Band now expose an `emg` stream. Access it through `get_neural_band_batch_by_index()`, `get_neural_band_batch_by_time_ns()`, and `get_neural_band_batch_configuration()`. Each `NeuralBandBatch` carries its EMG sub-samples, accelerometer and gyroscope readings, channel count, and ADC bit depth
+- **EMG calibration**: `NeuralBandEmgCalibration` converts raw ADC counts to physical units via `adc_to_volts()` and `volts_to_adc()`, alongside accessors for analog gain, ADC reference voltages, and bit width. Channel values are raw ADC counts, not volts, until converted
+- **Eye gaze configuration with field provenance**: `EyeGazeConfiguration` now reports `algorithm_name`, `algorithm_version`, `nominal_rate_hz`, and `user_calibrated`. Per-field provenance is available through `get_single_field_provenance()` and `get_combined_field_provenance()`, each returning `SUPPORTED`, `CALCULATED`, `HARDCODED`, or `NOT_PRODUCED` — so you can tell a measured value from a derived or placeholder one
+- **Battery status stream**: Gen2 recordings expose `502-1 battery-status`
+- **`rescale_camera_calibration()`**: rescales a camera calibration to a different image resolution
+- **NVDEC hardware decoding on Linux x86_64**: H.265 RGB video decodes on the GPU where CUDA is available, complementing the VideoToolbox path already used on macOS. Only the RGB camera takes the hardware path; mono 4:0:0 streams such as SLAM and eye-tracking cameras are decoded on the CPU by design. `has_cuda_support()` reports build capability
+- **Linux aarch64 wheels**: published alongside x86_64 and macOS arm64
+
+### Improvements
+
+- `aria_rerun_viewer` gained an EMG panel, and now enables the GPS and Neural Band panels only when the recording actually contains those streams
+- `viewer_mps` runs properly headless: `--rrd_output_path` is a documented flag, is mutually exclusive with `--web`, and no longer attempts to open a viewer window when writing to a file
+- Migrated to Rerun SDK 0.33.0
+- Dependencies are now flat: everything the toolset needs is a base requirement, so `pip install projectaria-tools` installs the complete package. The `[all]` extra is no longer defined and has become a no-op
+- Upgraded the C++ standard from C++17 to C++20
+
+### Bug Fixes
+
+- Fixed a shared library symbol collision that could occur when `projectaria-tools` and `vrs_health_check` are installed into the same environment
+
+### Behavior Changes
+
+- `get_time_sync_mode()` now returns `SubGhz` for Gen2 broadcaster and receiver recordings, rather than skipping the mode
+- **Python 3.9 is no longer supported.** The minimum supported version is Python 3.10; wheels are published for 3.10, 3.11, and 3.12
+
+---
+## Version 2.1.4
+
+### New Features
+
+- Added support for loading Aria Gen2 eye-tracking CSV output in the MPS reader: parses combined yaw/pitch + per-eye yaw/pitch, back-fills `combined_gaze_origin_in_cpf`, `spatial_gaze_point_in_cpf`, and `depth` from ray vergence
+- Exposed new `mps.get_gaze_vergence_point()` Python API that computes the vergence point of two eye gaze rays with independent per-eye pitch and arbitrary IPD, with built-in guardrails for near-parallel, divergent, skew, and excessive-depth inputs
+- `viewer_mps` now uses the back-filled Gen2 spatial gaze point (when available) to render a more accurate 3D gaze arrow, falling back to the yaw/pitch + depth approximation for Gen1 recordings
+
+### Bug Fixes
+
+- Fixed `AlsDataLayout` to match the actual Gen2 VRS schema: corrected `gain_{red,green,blue,uv,ir,clear}` from `int32_t` to `float` and `exposure_time_us` from `int32_t` to `uint32_t` (these previously read as 0 for every sample)
+- Fixed `bisection_timestamp_search` to return the truly closest timestamp index instead of whichever side the binary search landed on; also fixed border guards so an exact match on the first or last timestamp now returns its index rather than `None` (resolves GitHub issue #100)
+- Fixed an SE3 transform bug in `viewer_mps`'s 3D gaze arrow rendering where the displacement vector was being treated as a point, causing the CPF→device translation to be added twice
+
+---
+## Version 2.1.3
+
+### New Features
+
+- Added random-access P-frame video decoding: `getImageDataByIndex()` now supports non-sequential frame access for H.265 video streams. The decoder automatically replays from the preceding keyframe, enabling random-access for training data pipelines and video editors
+
+### Improvements
+
+- Bumped VRS dependency to include `ProximitySensorRecordableClass` support
+
+---
+## Version 2.1.2
+
+### New Features
+
+- Added `--show-latency` flag to `aria_streaming_viewer` that displays a TimeSeriesView panel for latency metrics in the Rerun UI
+- Added `--blueprint` CLI flag to load custom Rerun blueprint (`.rbl`) files, with automatic preservation on stream reconnection
+- Added robust SVD-based method for computing device-to-CPF transformation
+
+### Improvements
+
+- Migrated to Rerun SDK 0.26.2: unified `rr.set_time()` API, renamed archetypes to plural forms, and switched from TCP to gRPC transport
+- Migrated `vrs_to_mp4` from moviepy 1.0.3 to 2.x and flattened setup.py dependencies
+
+---
+## Version 2.1.1
+
+### Improvements
+
+- Exposed XPRS decoder on macOS through the `decode_oss_frame` Python module by adding NV12 pixel format support for hardware decoding
+- Added `rerun_memory_limit` variable in `AriaDataViewerConfig` to allow memory management for the viewer
+
+---
+## Version 2.1.0
+
+### New Features
+
+- Enabled Google Colab support for all Gen2 Python notebook tutorials — including "Open in Colab" links in the documentation website
+- Added external CI support for the newly-added Gen2 unit-test datasets to improve test coverage
+- Introduced Jacobian computation APIs for camera calibration workflows
+
+### Improvements
+
+- Enhanced the `viewer_mps` tool for Gen1 data: now supports rotated, non-rectified images
+- Fixed `toJson()` serialization issues in `SensorCalibration`, and added full serialization support for the `CameraConfig` field
+
+### Bug Fixes
+
+- Corrected contact-mic sensor labels
+- Fixed the binary name for `gen2_mp_csv_exporter`
+- Addressed other minor stability issues
+
+---
+## Version 2.0.0
+
+🚀 **Major Version Release**
+
+We're excited to announce a major update of the library — now supporting both Aria Gen1 and Gen2 VRS data with the same C++ and Python APIs you already know. This release also introduces full access to On-Device Machine Perception (MP) data in Aria Gen2 VRS.
+
+### API & Data Compatibility
+
+- **Unified Interface**: The C++ and Python APIs remain unchanged — your existing Gen1 code continues to work seamlessly
+- **Extended Capabilities**: Added APIs to access On-Device Machine Perception data streams available in Gen2 recordings
+- **Cross-Generation Support**: A single codebase now handles Gen1 and Gen2 VRS data without modification
+
+### New & Enhanced Tools
+
+#### New Tools
+
+- **`aria_rerun_viewer`**: A Python-based visualizer for Aria VRS files, built on Rerun for interactive multi-modal exploration
+- **`gen2_mp_csv_exporter`**: A Python tool to export On-Device MP data from VRS to CSV, fully compatible with the Machine Perception Service (MPS) format
+
+#### Upgraded Tools
+
+- **`vrs_health_check`**: Completely re-engineered and released as a standalone Python package for easier installation & use
+
+### Documentation
+
+- **New Python Tutorials**: Our Python tutorials have been completely rewritten into seven focused guides, covering topics such as:
+  - Queued multi-sensor data
+  - Device calibration usage
+  - Multi-device time alignment
+  - ...and more
+- **Updated Documentation Websites**: We now maintain dedicated documentation portals for each generation:
+  - Aria Gen2 Documentation Website — new APIs, tools, and data formats
+  - Aria Gen1 Documentation Website — original docs for Gen1 workflows

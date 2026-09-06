@@ -1,0 +1,73 @@
+---
+sidebar_position: 1
+title: Authentication Example
+---
+
+# Authentication Example
+
+Pair your PC with an Aria Gen 2 device from Python. This is the first thing you do with a new device — every other operation fails until it succeeds.
+
+**Script:** `device_auth.py` ([export the samples](/ark/client-sdk/python-sdk/python-interface#export-example-code) to get it)
+
+## Prerequisites
+
+- [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+- Device connected via USB
+- Companion App installed on your phone and paired with the device
+
+## Run it
+
+```bash
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_auth.py
+```
+
+When prompted, open the Companion App and approve the request.
+
+```
+Device not authenticated to this PC. Error: ...
+Authenticating device. Please open the Aria app and accept the pairing request
+[AriaGen2SDK:DeviceClient][INFO]: Client hash is: f30a36a9f3842bd3fc16c75b525...
+[AriaGen2SDK:DeviceClient][INFO]: Waiting for authentication approval...
+Device authentication successful to device 1M0YDB5H7B0020
+```
+
+## Worth knowing
+
+**Authentication and connection are different things.** Authentication is a one-time security handshake between a device and a PC, and it needs approval in the Companion App. Connection is establishing a session with an already-authenticated device, and needs no approval. Once paired, you can `connect()` as often as you like without re-authenticating.
+
+That is why the script tries `connect()` *first* and only falls through to `authenticate()` if it fails — running it against an already-paired device is a no-op, so it is safe to re-run.
+
+**Approving the request is a real interaction, and it can quietly stall.** While the script is waiting:
+
+- Keep the Companion App open and in the foreground
+- Your phone needs an active internet connection
+- Verify the hash shown in the app matches the one printed in your terminal before approving
+
+The script sleeps 5 seconds after `authenticate()` before retrying the connection. If you are slow to approve, that is not long enough — re-run it.
+
+:::caution `DeviceClientConfig` does not select the device
+`DeviceClientConfig` carries client-wide settings only. Assigning `config.device_serial` raises `AttributeError`. To target a specific device, pass a `DeviceTarget` to `connect()`:
+
+```python
+device = device_client.connect(sdk_gen2.DeviceTarget(serial="1M0YDB5H7B0020"))
+```
+
+See the [Connection Example](/ark/client-sdk/python-sdk/connection-example).
+:::
+
+## Troubleshooting
+
+**Authentication times out.** The script waits but never completes:
+
+- Ensure the Companion App is running in the foreground
+- Check that your phone has internet
+- Verify notifications are enabled for the Companion App
+- Confirm you approved the right request — the hash codes should match
+
+**Device not found.** Verify the device is connected over USB, run `aria_gen2 device list` to confirm it is visible, run `aria_doctor` to fix port and networking setup, and try a different USB cable or port.
+
+## Next steps
+
+* [Connection Example](/ark/client-sdk/python-sdk/connection-example) — target a specific device
+* [Recording Example](/ark/client-sdk/python-sdk/recording-example) — capture data
+* [All Python SDK examples](/ark/client-sdk/python-sdk/python-interface)

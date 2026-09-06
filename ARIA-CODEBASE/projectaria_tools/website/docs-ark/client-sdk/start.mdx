@@ -1,0 +1,114 @@
+---
+sidebar_position: 0
+title: Installation
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import useBaseUrl from '@docusaurus/useBaseUrl';
+import ThemedImage from '@theme/ThemedImage';
+
+# Installation
+
+Install the Client SDK to control and interact with Aria Gen 2 devices from your PC.
+
+## Prerequisites
+
+- **Hardware**: Aria Gen 2 device
+- **Mobile App**: Aria Companion App installed and paired with your device ([setup guide](/ark/companion-app/start))
+- **Connection**: USB cable for device-to-PC connection
+
+## Supported Platforms
+
+| OS / Platform                 | OS / Distro Details                                                | Aria Gen2 Support (projectaria-tools ≥2.3.0) | Supported Python Versions |
+| :---------------------------- | :----------------------------------------------------------------- | :----------------------------------------- | :------------------------ |
+| Linux (x64)                   | Ubuntu **22.04 LTS (jammy)** / **24.04 LTS (Noble Numbat)**, and recent Fedora releases. Requires **glibc 2.34 or newer** | ✅ Supported                  | 3.10 – 3.12              |
+| Linux (ARM64 / aarch64)       | e.g. NVIDIA Jetson. Same glibc floor as x64                           | 🧪 Experimental — partial toolchain        | 3.10 – 3.12              |
+| macOS (Apple Silicon / ARM64) | macOS **14+ (Sonoma or newer)** on M1/M2/M3/M4                        | ✅ Supported                               | 3.10 – 3.12              |
+| macOS (Intel / x64)           | —                                                                     | ❌ Not supported                            | —              |
+| Windows (x64)                 | —                                                                     | 🚧 Planned                               | —              |
+
+:::info Linux ARM64 is experimental, and only part of the toolchain runs there
+`projectaria-client-sdk` and `projectaria-tools` publish `aarch64` wheels, so the SDK installs on ARM64 Linux hosts such as NVIDIA Jetson. **Not everything follows**: `projectaria-vrs-health-check` has no ARM64 wheel, so [VRS Health Check](/ark/vrs_health_check/installation), [MPS](/ark/mps/start) and [Aria Studio](/ark/aria_studio/start) cannot be installed there. Treat ARM64 as usable for device control and capture, not as a drop-in replacement for an x64 host.
+:::
+
+:::note No macOS Intel builds
+No `x86_64` macOS wheels are published, so `pip install` fails outright on Intel Macs rather than installing an older build. Apple Silicon is required.
+:::
+
+:::warning Ubuntu 22.04 Known Issue
+If you encounter a `GLIBCXX_3.4.31 not found` error when running CLI commands on Ubuntu 22.04, you'll need to update your C++ standard library.
+See the [GLIBCXX troubleshooting guide](/ark/support/sdk#glibcxx-error-on-ubuntu-22-linux) for the solution.
+:::
+
+:::info BLE control has a narrower platform matrix
+The table above covers the SDK as a whole. **BLE device control is experimental** and is not supported on Ubuntu. See [BLE Device Control](/ark/client-sdk/ble-control).
+:::
+
+---
+
+## Step 1: Install Python
+
+To use the Client SDK, you'll need Python 3.10 - 3.12.
+* [Python 3 download page](https://www.python.org/downloads/)
+* To check what version of Python 3 you have, use `python3 --version`
+
+## Step 2: Create a Virtual Environment
+
+<Tabs groupId="operating-systems">
+<TabItem value="unix" label="Linux & macOS">
+
+```bash
+rm -rf $HOME/projectaria_gen2_python_env
+python3 -m venv $HOME/projectaria_gen2_python_env
+source $HOME/projectaria_gen2_python_env/bin/activate
+```
+
+</TabItem>
+</Tabs>
+
+## Step 3: Install the Client SDK Python Package
+
+```bash
+pip install projectaria-client-sdk
+```
+
+`pip` pulls the runtime dependencies in for you — you do not install them separately:
+
+| Dependency | Version | Used for |
+| :--------- | :------ | :------- |
+| `projectaria-tools` | `~=2.3.0` | VRS reading, device calibration, sensor data types |
+| `projectaria-login` | `~=0.2` | Device authentication |
+| `rerun-sdk` | `~=0.33.0` | The `aria_streaming_viewer` visualization window |
+| `numpy`, `termcolor` | any | Array handling and CLI output |
+
+:::note Rerun is pinned to a minor version
+`rerun-sdk` is pre-1.0 and changes its Python API across minor releases, so the Client SDK pins the minor it is built against. If your environment already has a different `rerun-sdk`, install into a fresh virtual environment (Step 2) rather than forcing the versions together — a mismatched Rerun fails when `aria_streaming_viewer` starts.
+:::
+
+## Verify Installation
+
+After installation, run `aria_doctor` to configure your system and verify the SDK is working:
+
+```bash
+aria_doctor
+```
+
+**Expected behavior:** The command opens required ports on your PC for device discovery and configures your system to allow unblocked internet connection.
+
+---
+
+## Available CLI Controls
+
+The Client SDK provides a CLI to control your Aria Gen 2 device:
+
+* **Recording**: Start, stop, list, and download recordings in VRS format
+* **Streaming**: Start and stop streaming sensor data
+* **Device**: Obtain device information, connect to Wi-Fi, send text-to-speech, and more
+
+See the [CLI Quick Reference](/ark/client-sdk/cli-reference) for a command overview or the [Technical Specs](/technical-specs/client-sdk/cli) for the full reference.
+
+## Next Steps
+
+1. [Authenticate your device](/ark/client-sdk/authentication) to enable SDK access
+2. Explore [Recording](/ark/client-sdk/recording) to capture data
+3. Check out [Streaming](/ark/client-sdk/streaming) to stream data in real-time

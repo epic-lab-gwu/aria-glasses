@@ -1,0 +1,224 @@
+---
+sidebar_position: 4
+title: Streaming Example
+---
+
+# Streaming Example
+
+Stream live sensor data from the device to your PC over HTTP, with a typed callback per sensor, and optionally record what arrives to a VRS file on the host.
+
+**Script:** `device_streaming.py` ([export the samples](/ark/client-sdk/python-sdk/python-interface#export-example-code) to get it)
+
+## Prerequisites
+
+- [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+- Device connected via USB and [authenticated](/ark/client-sdk/authentication)
+- Port 6768 available and not blocked by a firewall
+
+:::caution One-Time Setup: Device Authentication Required
+All device operations fail until you have run `aria_gen2 auth pair` once for this device-PC pair. See [Device Authentication](/ark/client-sdk/authentication).
+:::
+
+## Run it
+
+```bash
+# USB streaming, print sensor data for 10 seconds
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_streaming.py
+
+# Over Wi-Fi instead of USB
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_streaming.py --interface wifi_sta
+
+# Also save the received stream to a VRS file on this host
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_streaming.py \
+    --record-to-vrs ~/Downloads/streaming_capture.vrs
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--record-to-vrs <path>` | *(off)* | Save the received stream to a VRS file on the host |
+| `--profile-name <name>` | `profile9` | Streaming profile name |
+| `--custom-profile-path <path>` | *(none)* | Custom profile file. Takes priority over `--profile-name` |
+| `--interface <usb\|wifi_sta\|wifi_sap>` | `usb` | `usb` for USB-NCM, `wifi_sta` for a Wi-Fi network, `wifi_sap` for the on-device hotspot |
+
+The script streams for a fixed 10 seconds and exits. For a long-running session, replace that `time.sleep(10)` with your own loop.
+
+## The callbacks
+
+This is the part worth studying in the script. Each `register_*_callback` takes a function with a fixed positional shape:
+
+| Method | Callback signature |
+|---|---|
+| `register_rgb_callback` | `(ImageData, ImageDataRecord)` |
+| `register_slam_callback` | `(ImageData, ImageDataRecord)` |
+| `register_et_callback` | `(ImageData, ImageDataRecord)` |
+| `register_audio_callback` | `(AudioData, AudioDataRecord, num_channels: int)` |
+| `register_imu_callback` | `(MotionData, sensor_label: str)` — label is `imu-left` / `imu-right` |
+| `register_imu_batch_callback` | `(List[MotionData], sensor_label: str)` |
+| `register_magnetometer_callback` | `(MotionData, sensor_label: str)` |
+| `register_barometer_callback` | `(BarometerData)` |
+| `register_gps_callback` | `(GpsData)` |
+| `register_eye_gaze_callback` | `(EyeGaze)` |
+| `register_hand_pose_callback` | `(HandTrackingResult)` |
+| `register_vio_callback` | `(FrontendOutput)` |
+| `register_vio_high_frequency_callback` | `(OpenLoopTrajectoryPose)` |
+| `register_device_calib_callback` | `(DeviceCalibration)` |
+
+The sensor objects are `projectaria_tools` types, not SDK-local ones, so anything you already use to process a VRS recording works unchanged on a live stream. `image_data.to_numpy_array()` gives you a frame ready for OpenCV or PIL. The full list, including the queue-size setters, is in the [Python API reference](/technical-specs/client-sdk/api#streamdatainterface).
+
+Two things about `FrontendOutput` that are easy to miss: `transform_odometry_bodyimu` is the pose, and `online_calib` carries the calibration the device estimated during this session — per-camera intrinsics and per-IMU biases, which drift from the factory values as the device warms up.
+
+## Worth knowing
+
+**Callbacks run on SDK receive threads, not your main thread.** Any state a callback shares with another callback or with the main thread needs a lock, including simple counter increments. Slow work inside a callback blocks delivery and shows up as dropped frames — see [Feeding the stream to a model](#feeding-the-stream-to-a-model) below.
+
+**`enable_image_decoding` controls whether you get pixels or bitstream.** `StreamReceiver(enable_image_decoding=True)` decodes incoming H.265 frames before the image callbacks fire. Pass `False` to receive the encoded access units and decode them yourself — which is what you want when forwarding frames rather than looking at them.
+
+**The server address must be `0.0.0.0`.** The device connects *to* your host, so the receiver has to listen on all interfaces. Binding to `127.0.0.1` produces a receiver that never sees a connection.
+
+**For multiple devices, add `device_id` to any callback.** Declaring `device_id: str | None = None` makes the SDK pass the source device's serial on every fire; it detects the parameter via `inspect.signature()` at registration time. Callbacks without it are unaffected. See the [Multi-Device Streaming Example](/ark/client-sdk/python-sdk/multi-device-streaming-example).
+
+## Troubleshooting
+
+**Streaming starts but callbacks never fire.** In rough order of likelihood: a VPN is active (disconnect it — VPNs block the device→host path), port 6768 is blocked by a firewall, the server address is not `0.0.0.0`, or another process already holds the port (`sudo lsof -i :6768`). `aria_doctor` fixes most port and USB-networking problems.
+
+**The VRS file shows many dropped frames.** Data drops happen with a poor connection and the saved file reflects them faithfully. Close other bandwidth-heavy applications, reduce the work done inside callbacks, and increase the relevant queue size (`set_rgb_queue_size()` and friends).
+
+---
+
+## HTTP Streaming to Remote Server
+
+None of this is in the sample script — it is the setup you need when the receiver runs on a *different* machine from the one holding the USB cable, e.g. to process data on a more powerful host.
+
+:::warning Order matters
+Install certificates **before** starting the streaming server, and always pass the cert name when starting streaming. Starting streaming without `--streaming-cert-name` installs *new* certificates, invalidating the ones you already copied to the server. This is the same rule that governs the local start order — see [Start Order and Streaming Certificates](/ark/client-sdk/streaming#start-order-and-streaming-certificates).
+:::
+
+### 1. Install streaming certificates
+
+On the machine connected to the device over USB:
+
+```bash
+aria_gen2 streaming install-certs
+```
+
+This generates a certificate pair, installs the publisher cert on the device, and saves the subscriber certs locally under `~/.aria/streaming-certs/persistent/`. It prints the **cert name** you will need in step 4:
+
+```
+[AriaGen2SDK:Device][INFO]: Installing local streaming certs under: "/home/xxx/.aria/streaming-certs/persistent"
+[AriaGen2SDK:Device][INFO]: Request installing streaming certs on device: cert_1769712774692532015
+[AriaGen2Cli:App][INFO]: successfully installed streaming cert.
+```
+
+| File | Description |
+|------|-------------|
+| `root_ca.pem` | Root CA that verifies the device's publisher certificate |
+| `subscriber.pem` | Subscriber certificate for the streaming server |
+| `subscriber-key.pem` | Subscriber private key |
+| `publisher-cert-name` | The certificate name |
+
+### 2. Copy the certificates to the remote server
+
+```bash
+scp -r ~/.aria/streaming-certs/persistent/ user@<remote-server-ip>:~/.aria/streaming-certs/persistent/
+```
+
+### 3. Point the receiver at them
+
+The only difference from a local receiver is three TLS fields on `HttpServerConfig`:
+
+```python
+config = sdk_gen2.HttpServerConfig()
+config.address = "0.0.0.0"
+config.port = 6768
+
+config.ca_root = os.path.join(certs_dir, "root_ca.pem")
+config.certificate.cert = os.path.join(certs_dir, "subscriber.pem")
+config.certificate.key = os.path.join(certs_dir, "subscriber-key.pem")
+```
+
+Callback registration and the rest of the receiver are unchanged.
+
+### 4. Start streaming with the cert name
+
+Back on the USB-connected machine:
+
+```bash
+aria_gen2 streaming start \
+    --url https://<remote-server-ip>:<port> \
+    --streaming-cert-name <cert-name-from-step-1>
+```
+
+### Remote streaming troubleshooting
+
+**Connection refused** — the server is not running, not listening on that port, or the port is closed in the server's firewall.
+
+**Certificate errors** — the publisher cert on the device and the subscriber certs on the server must come from the same `install-certs` run. If you ran `streaming start` without `--streaming-cert-name` after copying, new certs were installed and the copied ones are stale: re-install and re-copy.
+
+**No data received** — confirm the device actually started streaming, that it can reach the server's IP, and that the URL is right.
+
+---
+
+## Feeding the stream to a model
+
+The callbacks are the integration point, and nothing says they have to print or visualize — the same handlers can forward what arrives to a model. WebRTC suits this better than HTTP: lower latency, and an audio path back to the wearer.
+
+* **Images to a vision-language model.** `register_rgb_callback` hands you a numpy array per frame, ready for a VLM — hosted or local — for scene description, visual Q&A, or grounding what the wearer is looking at.
+* **Audio to a realtime model.** `register_audio_callback` delivers PCM as it is captured, which is the shape a streaming speech or omni model wants.
+* **The answer back to the glasses.** Synthesized speech goes out over the WebRTC uplink with [`push_audio()`](/ark/client-sdk/python-sdk/webrtc-streaming-example#pushing-audio-to-the-glasses), so the loop closes inside the same session.
+
+Eye gaze, hand pose and VIO arrive alongside all of this, so a prompt can carry where the wearer was looking or pointing at the moment the frame was captured.
+
+:::caution Run inference off the callback thread
+Callbacks execute on the receive path. A network round-trip to a model API, or a local forward pass, blocks delivery for as long as it takes and shows up as dropped frames. Hand the data to a bounded queue and let a worker consume it — dropping frames when inference falls behind is what keeps the stream live.
+:::
+
+```python
+import queue
+import threading
+
+frames = queue.Queue(maxsize=2)   # bounded: prefer fresh frames over a backlog
+
+
+def rgb_callback(image_data: ImageData, image_record: ImageDataRecord):
+    try:
+        frames.put_nowait(image_data.to_numpy_array())
+    except queue.Full:
+        pass                      # inference is behind; keep the newest frames moving
+
+
+def inference_worker(stream_receiver):
+    while True:
+        frame = frames.get()
+        answer = my_vlm.describe(frame)               # hosted API or a local model
+        pcm, sample_rate = my_tts.synthesize(answer)
+        stream_receiver.push_audio(pcm, sample_rate=sample_rate, channels=1)
+
+
+stream_receiver.register_rgb_callback(rgb_callback)
+threading.Thread(target=inference_worker, args=(stream_receiver,), daemon=True).start()
+```
+
+Start from the `low_latency_streaming` profile for this kind of interactive loop — see [Choosing a profile](/ark/client-sdk/webrtc#choosing-a-profile).
+
+---
+
+## Switching to WebRTC
+
+WebRTC is an alternative transport through the *same* receiver interface. Every `register_*_callback` name and signature is identical and your callbacks receive the same typed objects; you swap two things:
+
+| | HTTP | WebRTC |
+|---|---|---|
+| Receiver class | `receiver.StreamReceiver()` | `receiver.WebRtcStreamReceiver()` |
+| Transport config | `sdk_gen2.HttpServerConfig()` | `sdk_gen2.WebRtcConfig()` |
+| Lifecycle | `set_server_config` / `start_server` / `stop_server` / `is_connected` | *identical* |
+| Streaming certificates | Required | Not used |
+| Audio uplink to the device | No | Yes (`push_audio()`) |
+
+For the device-side config, signaling topologies, on-device recording during a session, and the teardown sequence WebRTC needs, see the [WebRTC Streaming Example](/ark/client-sdk/python-sdk/webrtc-streaming-example).
+
+## Next steps
+
+* [WebRTC Streaming Example](/ark/client-sdk/python-sdk/webrtc-streaming-example) — the lower-latency transport
+* [Raw Streaming Example](/ark/client-sdk/python-sdk/raw-streaming-example) — one callback for every message, decoded by you
+* [Multi-Device Streaming Example](/ark/client-sdk/python-sdk/multi-device-streaming-example) — several devices into one server
+* [All Python SDK examples](/ark/client-sdk/python-sdk/python-interface)

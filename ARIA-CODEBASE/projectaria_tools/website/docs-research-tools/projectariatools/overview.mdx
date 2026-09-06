@@ -1,0 +1,59 @@
+---
+sidebar_position: 0
+title: Project Aria Tools Overview
+---
+
+# Project Aria Tools
+
+`projectaria-tools` is the official library for accessing and processing data recorded by **Project Aria glasses**.
+It provides a unified interface to load VRS files and access all associated sensor and machine perception data through high-level, easy-to-use APIs.
+The library supports efficient operations such as random access, timestamp-based queries, and synchronized multi-sensor data retrieval, with a consistent set of **C++ and Python APIs** seamlessly bridged via Pybind11.
+
+Project Aria glasses record its data in **VRS** (Visual Recordings System) format, which is a general-purpose recording format from Meta.
+Properly interpreting Project Aria VRS requires detailed understanding of the device’s sensor configurations, calibration models, and on-device perception outputs.
+`projectaria-tools` abstracts these complexities, ensuring that all data is correctly parsed, aligned, and represented for research and development workflows.
+
+In addition to data access, the library includes visualization and conversion utilities that allow users to inspect and export selected streams to standard formats such as CSV and MP4, making it easier to analyze and share Aria data across diverse toolchains.
+
+## Getting Started
+
+If you're new to `projectaria-tools`, start here:
+
+- **[Quick Start Installation Guide](./installation.mdx)** - Learn how to install `projectaria-tools` on your system
+- **[Advanced Installation](./advanced-installation.mdx)** - Advanced installation options and configurations
+- **[Pixi Installation](./advanced-installation-pixi.mdx)** - Install using Pixi package manager
+
+
+## Python Notebook Tutorials
+
+The tutorials are runnable Jupyter notebooks kept in the GitHub repository rather than
+duplicated here, so what you read is always what you run. Open one in Colab to run it
+with no local setup -- each notebook installs `projectaria-tools` and downloads the
+sample data it needs.
+
+| | Tutorial | Run it | What it covers |
+| :-- | :-- | :-- | :-- |
+| 1 | [VrsDataProvider Basics](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_1_vrs_data_provider_basics.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_1_vrs_data_provider_basics.ipynb) | Load an Aria VRS file and access its streams. |
+| 2 | [Device Calibration](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_2_device_calibration.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_2_device_calibration.ipynb) | Sensor intrinsics and extrinsics, projection, undistortion. |
+| 3 | [Sequential Multi-Sensor Access](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_3_sequential_access_multi_sensor_data.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_3_sequential_access_multi_sensor_data.ipynb) | The queued API for streaming several sensors in timestamp order. |
+| 4 | [Device Time Alignment](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_4_timestamp_alignment.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_4_timestamp_alignment.ipynb) | Time domains, timestamp queries, and multi-device alignment over SubGHz. |
+| 5 | [MPS Basics](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_5_mps_basics.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_5_mps_basics.ipynb) | MPS output layout, `MpsDataPathsProvider` and `MpsDataProvider`. |
+| 6 | [VIO and Trajectory](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_6_vio_and_trajectory.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_6_vio_and_trajectory.ipynb) | Device pose: on-device VIO, and the MPS trajectory and semi-dense point cloud. |
+| 7 | [Hand Tracking](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_7_hand_tracking.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_7_hand_tracking.ipynb) | Hands from both sources: the on-device stream and the MPS result. |
+| 8 | [Eye Tracking](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_8_eyetracking.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_8_eyetracking.ipynb) | Gaze from all three sources: on-device geometric, on-device ML, and MPS. |
+| 9 | [Neural Band sEMG](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_9_neural_band_emg.ipynb) | [Open in Colab](https://colab.research.google.com/github/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_9_neural_band_emg.ipynb) | The Meta Neural Band `emg` stream, its batch model and its two clocks. |
+
+Tutorials 1-4 cover reading a recording. Tutorial 5 covers reading MPS output. Tutorials
+6-8 each cover one algorithm across every source that produces it, on-device and MPS
+alike, since choosing between those sources is usually the real question. Tutorial 9
+covers the Neural Band stream.
+
+
+## Visualization Tools
+
+Tools for visualizing and exploring Aria data:
+
+- **[Python Visualization](./tools/pythonviz.mdx)** - Python-based visualization
+- **[C++ Visualization](./tools/cppviz.mdx)** - C++ visualization tool
+- **[VRS to MP4](./tools/vrstomp4.mdx)** - Convert VRS recordings to MP4 video
+- **[Export to CSV](./tools/exportcsv.mdx)** - Export sensor data to CSV format

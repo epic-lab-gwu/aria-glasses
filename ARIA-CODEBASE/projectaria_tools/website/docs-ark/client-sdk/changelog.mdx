@@ -1,0 +1,530 @@
+---
+sidebar_position: 10
+title: Changelog
+---
+
+# ClientSDK Changelog
+
+This page tracks the version history and changes made to the Aria Gen2 ClientSDK.
+
+---
+
+## Version 2.5.0
+
+**Release Date:** Sep 2026
+
+### ⚠️ Breaking Changes
+
+#### `enable_raw_stream` removed from `StreamDataInterface`
+
+`StreamDataInterface` took two constructor arguments in 2.4.0; it now takes one.
+
+```python
+# 2.4.0
+handler = StreamDataInterface(enable_image_decoding, enable_raw_stream)
+
+# 2.5.0
+handler = StreamDataInterface(enable_image_decoding)
+```
+
+Raw message delivery is no longer opt-in at construction — register a raw message callback when you want it, and pay nothing when you do not. `register_raw_message_callback()` is unchanged apart from being properly typed (see below).
+
+#### `device profile --upload-profile` replaced by subcommands
+
+Profile management moved from a single flag to explicit subcommands, so profiles can now be removed and read back rather than only added.
+
+```bash
+# 2.4.0
+aria_gen2 device profile --upload-profile my_profile.json
+
+# 2.5.0
+aria_gen2 device profile add my_profile.json
+```
+
+#### Dependency bounds
+
+- `projectaria-tools` moves from `~=2.1` to `~=2.3.0` — 2.3.x only, rather than any 2.x from 2.1 up. The SDK is pinned to the `projectaria-tools` minor it is built against.
+- `projectaria-login ~=0.2` and `rerun-sdk ~=0.33.0` are now required dependencies. If you pin `rerun-sdk` yourself, note that Rerun is pre-1.0 and breaks its Python API across minor versions.
+
+### New Features
+
+#### WebRTC Streaming
+
+Aria Gen 2 can now stream over WebRTC in addition to the existing HTTP transport, through the **same** callback surface — an existing receiver works unchanged apart from the transport it is configured with.
+
+**Key additions:**
+- `aria_gen2 streaming webrtc start` / `stop`
+- `WebRtcStreamingConfig`, `WebRtcStunServer`, and `WebRtcTurnServer` in `aria.sdk_gen2`, with `set_webrtc_streaming_config()` on the device client
+- `set_ntp_sync()` / `ntp_sync()` for NTP-synchronized sessions
+- `--transport {http,webrtc}` on `aria_streaming_viewer`
+- Frames are stamped in the **device** clock rather than the host clock, so images and sensors share a single time domain for pairing
+- New sample: `device_webrtc_streaming.py`
+
+#### Offline Replay from a VRS Recording
+
+A recorded `.vrs` file can now drive the SDK in place of a live device. Its sensor messages are pushed into a `StreamDataInterface` on a background thread, paced by the original device timestamps, so **every callback you would wire to real glasses fires on replay** — same signatures, same delivery order, no hardware attached.
+
+This turns most callback-level development and debugging into an offline loop: capture a session once, then iterate against it as many times as you like. It also makes streaming callbacks testable in CI, where no device exists.
+
+**Key additions:**
+- `create_replay_source(config, stream_data)` returns a `ReplaySession` with `is_finished()` and `stop()`
+- `ReplaySourceConfig` takes `filename`, `speed_multiplier`, and an optional `start_time_sec` / `end_time_sec` sub-range
+- `speed_multiplier` defaults to real-time (`1.0`); set it to `0.0` to run as fast as the data can be read, which is what you usually want in a test
+- New sample: `replay_vrs.py`, including `--duration-sec` and `--speed`
+
+:::note
+A malformed `.vrs` file aborts the process through an internal VRS assertion rather than raising. Catching `RuntimeError` covers the recoverable cases — a missing file or an unsupported extension.
+:::
+
+#### Bluetooth LE Wireless Control
+
+Devices can now be reached over Bluetooth LE, with no USB cable.
+
+**Key additions:**
+- connect over BLE instead of USB
+- `--ble-scan` makes `device list` report which BLE-paired devices are in range. Off by default because the scan costs several seconds; without it, paired devices are listed from this host's stored pairings without a presence check
+- `--ble-scan-timeout` (default 12s) — discovery latency is irregular, so a short window can report a present device as missing
+- `aria_gen2 auth remove-ble-creds` to clear stored BLE credentials
+
+:::note
+Recording and streaming are **not** available over BLE. Use BLE for pairing, status, and device control; use USB or Wi-Fi for data.
+:::
+
+#### Linux ARM64 Wheels
+
+`projectaria_client_sdk` now publishes `linux_aarch64` wheels alongside x86_64 and macOS arm64, so the SDK installs on ARM64 Linux hosts such as NVIDIA Jetson.
+
+#### User Authentication
+
+User-level authentication, separate from device pairing.
+
+**Key additions:**
+- `aria_gen2 user login`, `user verify`, and `user logout`
+
+#### Per-Device Profile Management
+
+**Key additions:**
+- `device profile add` — install a custom profile without disturbing the ones already on the device
+- `device profile remove` — remove a single profile by name
+- `device profile pull` — read a profile's JSON back off the device
+
+#### Meta Neural Band Sensor Stream
+
+Streaming sessions can now deliver the Meta Neural Band batch stream (EMG plus accelerometer and gyroscope).
+
+**Key additions:**
+- `NeuralBandBatch` and `NeuralBandBatchConfiguration` delivered to a registered neural-band callback, with decoded per-sub-sample structs rather than a packed payload
+- EMG calibration is delivered on streaming sessions, matching what recording already provided
+
+#### Smaller Additions
+
+**Key additions:**
+- `start_streaming(record=True)` starts an on-device recording alongside the stream
+- Audio can be pushed from the host to the device over the streaming uplink — see the new `device_push_audio.py` and `audio_terminal.py` samples
+- A Rerun blueprint ships with the samples, so the viewer opens with a usable layout
+- `--device-ip` on every command, to address a device by IP directly
+
+### Improvements
+
+#### Fully Typed Python Stubs
+
+Every `register_*_callback` in `sdk_gen2.pyi` was previously typed as `Callable[..., Any]`, which told editors and type checkers nothing about what a callback receives. They now carry precise signatures.
+
+**Key additions:**
+- Named callback aliases for every sensor, referencing the real `projectaria_tools` types (`ImageData`, `MotionData`, `EyeGaze`, `HandTrackingResult`, `FrontendOutput`, `NeuralBandBatch`, and the rest)
+- `SharedMessage` and `IBuffer` are documented types with `as_memoryview()` for raw message payloads
+- `usb_devices()` is typed as `List[Tuple[str, str]]` — `(serial, usb path)` — instead of `List[Any]`
+
+### Bug Fixes
+
+#### Hardware-Accelerated Decode Was Inverted
+
+The decoder was passed the hardware-acceleration flag where it expected the *disable* flag, so requesting hardware acceleration turned it off and vice versa. Hardware decode (VideoToolbox on macOS) now engages when requested, substantially reducing CPU use on high-rate RGB profiles.
+
+#### RGB Decode Errors at Session Start
+
+Decoding began on the first frame received, so any frames arriving before the stream's first keyframe produced a burst of decode errors. Decoding now waits for a keyframe per camera before starting.
+
+---
+
+## Version 2.4.0
+
+**Release Date:** Jun 2026
+
+### New Features
+
+#### Multi-Device Time-Aligned Recording & Streaming
+
+Orchestrate multiple Aria Gen 2 devices from a single CLI invocation. Devices receive coordinated start/stop, and one device acts as a time-domain-mapping broadcaster so receivers can align timestamps to a shared clock.
+
+**Key additions:**
+- `recording start --all` / `streaming start --all` — discover and orchestrate every connected device
+- `--broadcaster <serial>` — override the default broadcaster (smallest-serial wins by default)
+- `--disable-time-domain-mapping` — opt out of TDM when only coordinated start/stop is needed
+- `recording stop` / `streaming stop` — auto-stop all connected devices when no `--serial` is given
+- `recording sessions list` / `info` and `streaming sessions list` / `info` — inspect multi-device sessions
+- `recording download --session <id>` — download every recording in a session into per-device subdirectories
+- Sessions persisted as JSON at `~/.aria/multi-device-session/<id>.json`
+
+See [Multi-Device Recording & Streaming](/ark/client-sdk/multi-device) for the full guide.
+
+#### Unified Device Discovery
+
+The `connect()` path now discovers Aria Gen 2 devices over the network (mDNS) and over USB simultaneously, so a device is found whether it is reachable over the network, over USB, or both.
+
+**Key additions:**
+- A single discovery pass spans both transports — no need to know in advance which one a device is on
+- Devices reachable via both paths are de-duplicated by serial, so each device is listed only once
+- When multiple devices are discovered, every serial is reported so you can disambiguate with `--serial`
+
+#### Country-aware Time-Domain-Mapping Channel Validation
+
+The CLI now validates the time-domain-mapping channel against the connected glasses' regulatory region before forwarding it to the device, mirroring what the Aria companion app enforces.
+
+**Key additions:**
+- ETSI countries permit channels `0–2`; FCC countries permit channels `10–40`
+- Channel auto-picked per region when `--time-domain-mapping-channel` is omitted (ETSI → `0`, FCC → `10`)
+- Multi-device sessions infer an empty country from any sibling that does report one (logged as a `WARNING`); cross-region mismatches are surfaced as a hard error
+- Country code source: each device's `wifi_country_code` from `HmdStatusResponse`, surfaced via the new `aria::sdk::DeviceStatus.countryCode` field
+- Behavioral break: existing scripts that relied on the silent default of channel `0` in FCC regions will now error out with an actionable message pointing to the right channel
+
+#### Per-Device Identity in Callbacks
+
+Optional `device_id` parameter on every Python streaming callback. Auto-detected via `inspect.signature()` — declare `device_id` in your callback to receive the device serial; omit it to keep existing single-device behavior unchanged.
+
+**Key additions:**
+- `device_id: str | None` keyword argument on RGB, SLAM, ET, audio, IMU/IMU batch, magnetometer, GPS, phone-location, PPG, barometer, Bluetooth/WiFi beacon, eye-gaze, hand-pose, time-domain-mapping callbacks
+- `handler.device_serial` property on `StreamDataInterface`
+- See [Multi-Device Streaming Example](/ark/client-sdk/python-sdk/multi-device-streaming-example) for the pattern
+
+#### Multi-Device Streaming Example
+
+New Python tool `multi_device_streaming_example.py` — a headless HTTPS server that demonstrates how to receive RGB frames and time-domain-mapping offsets from multiple Aria Gen 2 devices in a single process and disambiguate them per device.
+
+**Key additions:**
+- Concrete reference for the new opt-in `device_id` callback parameter
+- Per-device aggregation pattern (thread-safe dicts keyed by serial; `threading.Lock` for cross-callback state)
+- Time-domain-mapping offset summary printed on shutdown for sanity-checking sync quality
+- Use as a starting point for downstream tools (notebooks, custom dashboards, perception pipelines) that need per-device frames in one process
+- See [Multi-Device Streaming Example](/ark/client-sdk/python-sdk/multi-device-streaming-example) for the walkthrough
+
+#### Multi-Device Streaming Viewer
+
+New Python tool `multi_device_streaming_viewer.py` — a live Rerun visualization that receives RGB streams from N Aria Gen 2 devices, applies TDM-corrected timestamps for synchronized cross-device replay, and rebuilds its panel layout as devices connect and reconnect.
+
+**Key additions:**
+- mDNS-resolved HTTPS server (`oatmeal_server.local:6768`) shared across all devices
+- TDM activation validation with per-device timing windows; fails fast on a broken receiver before the user spends minutes wondering why the timeline is desynced
+- `--broadcaster <serial>` to override the auto-detected broadcaster
+- `--expected-device-count <N>` strict mode for scripted/CI runs
+- `--skip-tdm-validation` escape hatch for partial-sync investigations
+- Inherits the persistent shared-cert workflow from `streaming install-certs`
+- See [Multi-Device Recording & Streaming](/ark/client-sdk/multi-device#live-visualization-with-multi_device_streaming_viewer) for usage
+
+### Improvements
+
+#### Python Type Stubs
+
+The Client SDK wheel now ships `sdk_gen2.pyi` type stubs, giving editors and type checkers full autocomplete and signature information for the `aria.sdk_gen2` module.
+
+**Key additions:**
+- `sdk_gen2.pyi` packaged in the `projectaria_client_sdk` wheel, alongside the existing `sdk.pyi`
+- IDE autocomplete, inline signatures, and static type checking (mypy / pyright) across the Gen2 SDK surface
+
+#### Resilient Streaming Examples
+
+The streaming example scripts now exit cleanly when a device connection drops, instead of hanging or crashing.
+
+**Key additions:**
+- `device_streaming.py` reports the error and exits cleanly when an initial connection fails
+- `multi_device_streaming_viewer.py` polls `server.connections()` to detect per-device drops, marks the affected device disconnected, and keeps the remaining devices streaming
+- `SIGINT` / `SIGTERM` handlers tear down servers and callbacks gracefully on shutdown
+
+### Bug Fixes
+
+#### Custom Profile Upload
+
+Fixed a failure that prevented some custom data-flow profiles from installing. Profiles carrying a top-level `__type` tag were rejected by the strict profile parser; the tag is now handled correctly, so `aria_gen2 device profile --upload-profile <file>` and `device.set_data_flow_profile(...)` accept them.
+
+---
+
+## Version 2.3.0
+
+**Release Date:** Apr 2026
+
+### New Features
+
+#### Multi-Device Support
+
+Refactored device connectivity to support connecting multiple Aria Gen 2 devices simultaneously.
+
+**Key additions:**
+- `DeviceTarget` struct bundling IP and serial for streamlined device identification
+- `usb_network_devices()` returns `List[DeviceTarget]` for direct use with `connect()`
+- CLI supports `--serial` flag to specify a target device
+- Auto-prompts when multiple devices are detected
+
+#### Real-Time Latency Measurement
+
+Added real-time latency measurement to the `aria_streaming_viewer`.
+
+**Key additions:**
+- Re-enabled TicSync time synchronization
+- `TimeSyncRef` Python binding with `compute_latency_ms()`, `is_connected()`, and `is_valid()` methods
+- CLI flags: `--show-latency` and `--latency-offset-ms`
+
+#### Multi-Device Streaming Cert Install
+
+The CLI `streaming install-certs` command now supports batch certificate installation across multiple devices.
+
+**Key additions:**
+- `--device` option for specifying target devices
+- Certificates generated once and installed on all specified devices
+
+#### Recording List API
+
+`listRecordings()` now returns `List[RecordingInfo]` with uuid, size, and metadata, enabling Python scripts to directly retrieve and process recording lists.
+
+#### Recording State Query API
+
+Added APIs for querying the current recording state of a device.
+
+**Key additions:**
+- `is_recording()` and `get_recording_state()` APIs
+- `RecordingState` data class with `is_recording`, `recording_name`, `start_time_ms`, and `profile_name` fields
+- Enables Aria Studio and Companion App recording state synchronization
+
+#### Thumbnail Download API
+
+Added APIs for downloading recording thumbnails.
+
+**Key additions:**
+- `download_thumbnail(uuid, output_path)` for downloading a single thumbnail
+- `download_all_thumbnails(uuid, output_dir)` for batch downloading
+- Thumbnail naming matches VRS files (e.g., `example_recording_20230101_123456_thumbnail_0.jpeg`)
+
+#### Device Profiles API for Python
+
+Added `device_profiles()` API to the Python SDK for retrieving device recording profiles.
+
+#### Online Calibration Streaming
+
+VIO data stream now includes real-time Online Calibration state.
+
+**Key additions:**
+- `FrontendOutput.online_calib` containing:
+  - Camera projection model parameters (real-time updated intrinsics)
+  - IMU biases (accelerometer/gyroscope offsets)
+- Full Python SDK support for `OnlineCalibState`, `ProjectionModelParameters`, and `ImuMeasurementModelParametersFloat`
+
+#### Custom Streaming Profile Support
+
+The `device_streaming.py` example now supports custom streaming profiles.
+
+**Key additions:**
+- `--profile-name` argument for selecting a named profile
+- `--custom-profile-path` argument for using a custom JSON profile
+
+---
+
+## Version 2.2.0
+
+**Release Date:** Dec 2025
+
+### New Features
+
+#### macOS Support
+
+ClientSDK now supports macOS, enabling developers on Apple hardware to work with Aria Gen2 devices natively.
+
+**Key additions:**
+- Full Python SDK support on macOS (Apple Silicon and Intel)
+- Hardware-accelerated image decoding for improved performance on macOS
+- Native USB network connection support via Companion App pairing
+- All CLI tools (`aria_gen2`, `aria_doctor`) available on macOS
+
+**Supported platforms:**
+- macOS 13 (Ventura) and later
+- Python versions: 3.10 - 3.12
+
+#### Wireless Streaming
+
+Added support for wireless data streaming from Aria Gen2 devices over WiFi, providing greater flexibility and mobility during development and testing.
+
+**Key capabilities:**
+- **WiFi Router Streaming**: Stream data from Aria devices connected to the same WiFi network as your development machine
+- **On-Device Hotspot Streaming**: Connect directly to Aria's built-in WiFi hotspot for standalone wireless streaming without requiring external network infrastructure
+
+**Benefits:**
+- Untethered development workflows - no USB cable required for streaming
+- Improved mobility for testing in various environments
+- Simplified setup for multi-device scenarios
+
+**Resources:**
+- See the [Wireless Streaming Guide](/ark/client-sdk/streaming#wireless-streaming) for setup instructions and best practices
+
+---
+
+## Version 2.1.0
+
+**Release Date:** Nov 2025
+
+### ⚠️ Breaking Changes
+
+:::danger Breaking Change
+**Device OS V14 (version: 51021960009400500) and V15 (version: 51041610004100500) Compatibility Update**
+
+ClientSDK 2.1.0 introduces a breaking change for recording operations with devices running **OS V14 only**:
+
+- **Recording commands now require the `--disable-tls` flag** when interacting with Aria devices running OS V14
+- Existing scripts and workflows that perform recording operations must be updated to include this flag
+- This change only affects recording functionality; streaming and other operations remain unchanged
+
+**OS V15 Compatibility:** Devices running OS V15 are fully compatible with ClientSDK 2.1.0 and **do not require** the `--disable-tls` flag. Recording commands work normally without any modifications.
+
+**Example (OS V14 only):**
+```bash
+# Old command (will fail with OS V14 devices)
+aria_gen2 recording list
+
+# New command (required for OS V14 devices)
+aria_gen2 recording list --disable-tls
+
+# OS V15 devices (no flag needed)
+aria_gen2 recording list
+```
+
+**Migration:**
+- **OS V14 devices**: Update all recording-related CLI commands and Python scripts to include the `--disable-tls` flag
+- **OS V15 devices**: No changes required - all commands work as before
+:::
+
+
+### New Features
+
+#### ROS2 Integration Examples
+
+Added comprehensive ROS2 integration support for advanced users, enabling seamless integration of Aria device data with ROS2 robotics workflows.
+
+**Key additions:**
+- Custom ROS2 message type (`AriaRaw`) for transporting raw Aria sensor data
+- Publisher example for streaming Aria data to ROS2 topics
+- Subscriber example for receiving and processing Aria data in ROS2 nodes
+- Support for all sensor types (SLAM cameras, RGB camera, IMU, VIO, eye gaze, hand tracking, etc.)
+- Device calibration sharing across ROS2 nodes
+
+**Resources:**
+- See the [ROS2 Integration Example](/ark/client-sdk/python-sdk/ros2-example) for detailed setup instructions and code walkthrough
+
+#### Enhanced Data Converter API
+
+Expanded the `OssDataConverter` class with additional functionality for converting raw FlatBuffer messages to typed Python data structures.
+
+**New capabilities:**
+- **Message Type Utilities**: Added `MessageType.to_string()` and `MessageType.from_string()` methods for converting between message IDs and their string representations
+  ```python
+  # Convert message ID to string
+  name = sdk_gen2.MessageType.to_string(0x8010)  # "SLAM_CAMERA_FRAME"
+
+  # Convert string to message ID
+  msg_id = sdk_gen2.MessageType.from_string("IMU_EVENT")  # 0x8020
+  ```
+
+- **SharedMessage Constructor**: Enhanced `SharedMessage` class with constructor for creating messages programmatically
+  ```python
+  msg = sdk_gen2.SharedMessage(
+      id=sdk_gen2.MessageType.IMU_EVENT,
+      payload=b'\x00\x01\x02\x03',
+      timestampNs=1234567890
+  )
+  ```
+
+- **Additional Sensor Conversions**: Expanded support for converting various sensor message types:
+  - Location sensors: GNSS, phone location
+  - Environmental sensors: barometer, magnetometer
+  - Wireless beacons: bluetooth (BLE) and WiFi
+  - Machine perception: eye gaze, hand tracking, VIO (Visual-Inertial Odometry)
+  - Other sensors: audio, PPG (photoplethysmogram)
+
+**Resources:**
+- See the [Python API Reference](/technical-specs/client-sdk/api#data-converter) for detailed API documentation
+
+### Improvements
+
+#### Data Converter Performance Optimization
+
+Significantly improved data processing efficiency by leveraging native FlatBuffer serialization from Aria Gen2 devices:
+
+- **Reduced serialization overhead**: The data converter now directly processes FlatBuffer-serialized data from the device, eliminating redundant serialization/deserialization steps
+
+This optimization maintains full API compatibility while delivering better performance across all sensor data types.
+
+#### Documentation & Developer Experience
+
+- Enhanced documentation with detailed code walkthroughs for ROS2 examples
+- Added troubleshooting guides for common ROS2 integration issues
+- Improved message type handling with string conversion utilities
+
+---
+
+## Version 2.0.0
+
+**Release Date:** Oct 2025
+
+### Initial Release
+
+ClientSDK is a comprehensive toolbox designed to facilitate control and interaction with Aria Gen2 devices. This initial release provides a complete set of libraries, utilities, and example code to streamline device management, authentication, recording, and streaming.
+
+### Key Features
+
+**Device Management**
+- Core classes and utilities for connecting to, authenticating, and controlling Aria Gen2 devices
+- USB network connection support via Companion App pairing
+- Device discovery and connection management
+
+**Streaming Support**
+- Components for starting and managing data streams from Aria Gen2 devices
+- On-device machine perception data streaming (VIO, hand pose, eye gaze)
+- Raw sensor data streaming from all device sensors (cameras, IMU, audio, etc.)
+- HTTP-based streaming architecture with certificate support
+
+**Recording Support**
+- Components for starting and managing on-device recording
+- Recording configuration with predefined profiles
+- Recording management (list, download, delete)
+- VRS format output
+
+**Security**
+- Built-in support for streaming certificates and security options
+- Secure device authentication via mobile Companion App
+- SSL/TLS support for streaming connections
+
+**Python & CLI Tools**
+- Python SDK with intuitive APIs for device control and data streaming
+- Command-line utilities for scripting and automation (`aria_gen2`, `aria_doctor`)
+- Comprehensive device control commands (authentication, recording, streaming, device info)
+
+**Example Code**
+- Ready-to-use Python examples demonstrating common workflows
+- Sample code for device connection, authentication, recording, streaming, and text-to-speech
+- Comprehensive documentation with setup guides and tutorials
+
+### Prerequisites
+
+- **Hardware**: Aria Gen2 device
+- **Mobile App**: Aria Companion App (installed and paired with device)
+- **Connection**: USB cable for device-to-PC connection
+
+### Supported Platforms
+
+- **Linux (x64)**: Fedora 40/41, Ubuntu 22.04 LTS, Ubuntu 24.04 LTS
+- **Python versions**: 3.10 - 3.12
+
+---
+
+## Support
+
+For issues, questions, or feature requests, please visit:
+- [SDK Support & Troubleshooting](/ark/support/sdk)
+- [Technical Specifications](/technical-specs/client-sdk/cli)
+- [Python API Reference](/technical-specs/client-sdk/api)

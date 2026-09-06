@@ -1,0 +1,26 @@
+// Markdownlint configuration.
+// See https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+{
+  "default": true,
+
+  // Line length is not enforced. Markdown is reflowed by renderers (GitHub,
+  // wikis), hard-wrapping causes diff churn on prose edits, and SKILL.md
+  // `description:` fields are intentionally long single-line strings per the
+  // Claude Code skill spec.
+  "MD013": false,
+
+  // Allow inline HTML (badges, callouts).
+  "MD033": false,
+
+  // Allow duplicate headings at different levels (e.g. multiple "## Usage").
+  "MD024": { "siblings_only": true },
+
+  // First-line heading not required (some files start with frontmatter).
+  "MD041": false,
+
+  // Allow bare URLs (we wrap most but not all).
+  "MD034": false,
+
+  // Allow trailing punctuation in headings (e.g. "Q&A?").
+  "MD026": false
+}

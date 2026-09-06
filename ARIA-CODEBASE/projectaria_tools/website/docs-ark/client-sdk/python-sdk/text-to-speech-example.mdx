@@ -1,0 +1,64 @@
+---
+sidebar_position: 9
+title: Text-to-Speech Example
+---
+
+# Text-to-Speech Example
+
+Send text to the device and have it spoken through the built-in speakers — useful for prompting or instructing the wearer during a session.
+
+**Script:** `device_tts.py` ([export the samples](/ark/client-sdk/python-sdk/python-interface#export-example-code) to get it)
+
+## Prerequisites
+
+- [Client SDK installed](/ark/client-sdk/start) and virtual environment activated
+- Device connected via USB and [authenticated](/ark/client-sdk/authentication)
+
+:::caution One-Time Setup: Device Authentication Required
+Before running this example you **must** authenticate your device by running `aria_gen2 auth pair` (see [Device Authentication](/ark/client-sdk/authentication)). This only needs to be done **once** per device-PC combination, but **all device operations will fail without it**.
+:::
+
+## Run it
+
+```bash
+python ~/Downloads/projectaria_client_sdk_samples_gen2/device_tts.py --text "Hello from Aria"
+```
+
+`--text` is required. The TTS engine handles numbers and punctuation naturally, so `"You have 3 notifications. Check your device."` reads the way you would expect.
+
+## Worth knowing
+
+**`render_tts()` returns before the audio finishes.** The call sends the text and returns immediately; the device synthesizes and plays asynchronously. A script that exits right after calling it may cut the utterance short, and a long utterance keeps playing while your code moves on.
+
+`stop_tts()` interrupts playback:
+
+```python
+device.render_tts("This is a long announcement that we will interrupt")
+time.sleep(1)
+device.stop_tts()
+```
+
+The CLI equivalents are `aria_gen2 device tts start --tts-text "..."` and `aria_gen2 device tts stop`.
+
+**`render_tts()` synthesizes on the device.** To play audio *you* produced — a recorded clip, your own TTS engine's output, a synthesized tone — use `push_audio()` over a WebRTC session instead. See [WebRTC Streaming Example → Pushing Audio to the Glasses](/ark/client-sdk/python-sdk/webrtc-streaming-example#pushing-audio-to-the-glasses).
+
+## Troubleshooting
+
+**Command succeeds but the device is silent.** Check that device audio is not muted and the volume is up in the Companion App. A very low battery can also affect audio output.
+
+**Connection drops when sending TTS.** Verify the USB connection is stable and re-check `aria_gen2 auth check`. Reconnect and retry:
+
+```python
+try:
+    device.render_tts(text)
+except Exception as e:
+    print(f"Connection lost: {e}")
+    device = device_client.connect()
+    device.render_tts(text)
+```
+
+## Next steps
+
+* [Recording Example](/ark/client-sdk/python-sdk/recording-example) — capture data on the device
+* [Streaming Example](/ark/client-sdk/python-sdk/streaming-example) — process sensor data live
+* [All Python SDK examples](/ark/client-sdk/python-sdk/python-interface)

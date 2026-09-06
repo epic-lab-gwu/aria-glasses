@@ -1,0 +1,430 @@
+---
+sidebar_position: 1
+title: Command Line Interface
+---
+# MPS Command Line Interface
+
+## Overview
+The Project Aria MPS CLI Guide provides detailed information about how to use this tool. The guide contain:
+* [About the MPS CLI](#about)
+* [How the MPS CLI works](#how-the-mps-cli-works)
+    * Go to [MPS Data Lifecycle](/ark/mps/mps_data_lifecycle) for more details about how sequences are processed on the server
+* [MPS CLI Settings](#cli-settings)
+* [MPS CLI Command Line Reference](#command-line-reference)
+
+<div id="about"> </div>
+
+
+## About
+
+The Project Aria MPS Command Line Interface (MPS CLI), part of Project Aria Tools, is the preferred way to request Machine Perception Services (MPS). MPS CLI supports both Aria Gen1 and Aria Gen2 devices.
+
+The MPS CLI has two modes:
+
+* Single
+    * Process each recording individually
+    * The input can be a file and/or directory, so you can batch process multiple recordings with a single command
+    * Output is always saved next to the input file
+    * The most common way to request MPS
+* Multi
+    * Process two or more recordings together for Multi-SLAM
+    * Generate SLAM outputs for each recording in a shared coordinate frame
+
+
+
+## How the MPS CLI works
+The MPS CLI enables you to upload VRS files from your computer to the Meta servers for processing. The outputs are then saved to your local directory. The MPS CLI will try to process multiple recordings concurrently. The concurrency for various stages can be controlled via [Settings](#cli-settings).
+
+![MPS CLI UI for single mode](/img/docs-ark/mps/mps_cli_ui_single.png)
+
+1. Once you submit your request, the MPS CLI for the selected mode will open and show the status of your requests.
+    * See the [Getting Started](/ark/mps/start) or the [Command Line Reference](#command-line-reference) below for how to submit a request.
+2. Once authenticated, the request tool checks with the server to see if this recording was previously processed. We use unique IDs (Hashing stage) to check if this is a new or a previously known recording.
+3. If it is a known recording, we skip processing and directly download the results (Download Results stage) or show the error code.
+4. If this is a new recording, we run health checks on the recording (HealthCheck stage), to minimize the chances that it will fail during processing. While this check catches obvious errors, like gaps in data and ensures presence of the right sensor streams, but server side processing may still fail.
+5. If the health check passes, the recording is encrypted on your machine (Encrypting stage).
+6. After encryption, the recordings are uploaded to the MPS servers (Uploading stage) for processing.
+    * Uploads are resumable.
+    * Interrupted uploads can be resumed within 24 hours.
+7. Data is processed on MPS servers (Processing stage).
+    * The MPS CLI periodically checks the MPS request's status on the server.
+    * It is safe to close the MPS Request tool once the data is processing. When the MPS CLI is reopened, it will check the status of your data and progress to Downloading if it is ready.
+
+:::tip If you get an error code
+The server re-attempts processing multiple times before it stops and provides an error message
+* Check [Error Codes](/ark/support/mps#error-codes) to see what the error was. In the MPS CLI, you can click (Cmd + click on Mac, Ctrl + click on Linux) on the error code to reach the troubleshooting page.
+* We encourage you to send a bug report with log files to [Aria User Support](/ark/support) if it is not an error code 1xx. By default, logs are stored in /tmp/logs/projectaria/mps/.
+:::
+
+8. Once the processing is complete, and the tool is open, outputs are automatically downloaded (Downloading stage).
+9. Recordings in the MPS CLI UI will show the Success status once the outputs been successfully downloaded.
+
+
+### Logs
+Each run will write the console logs to a log file on the local drive. Since the MPS CLI can run concurrently on multiple recordings, these logs are useful for debugging purposes. The logs are named by the current time when the request was initiated via CLI.
+
+By default, logs are stored in `/tmp/logs/projectaria/mps/`. The location can be modified in settings.
+
+<div id="settings"><br/></div>
+
+## CLI Settings
+
+Project Aria MPS CLI settings can be customized via the mps.ini file. This file is located in the $HOME/.projectaria/mps.ini
+
+
+<table>
+ <tr>
+ <td><strong>Setting</strong></td>
+ <td><strong>Description</strong></td>
+ <td><strong>Default Value</strong></td>
+ </tr>
+ <tr>
+ <td colspan="3" ><strong>General settings</strong></td>
+ </tr>
+ <tr>
+ <td><code>log_dir</code></td>
+ <td>Where log files are saved for each run. The filename is the timestamp from when the request tool started running.</td>
+ <td><code>/tmp/logs/projectaria/mps/</code></td>
+ </tr>
+ <tr>
+ <td><code>status_check_interval</code></td>
+ <td>How long the MPS CLI waits to check the status of data during the Processing stage.</td>
+ <td>30 secs</td>
+ </tr>
+ <tr>
+ <td><code>concurrent_processing</code></td>
+ <td>Number of recordings to process concurrently. Max allowed is 100.</td>
+ <td>25</td>
+ </tr>
+ <tr>
+ <td colspan="3" > <strong>HASH</strong></td>
+ </tr>
+ <tr>
+ <td><code>concurrent_hashes</code></td>
+ <td>Maximum number of files that can be concurrently hashed</td>
+ <td>4</td>
+ </tr>
+ <tr>
+ <td><code>chunk_size</code></td>
+ <td>Chunk size to use for hashing</td>
+ <td>10MB</td>
+ </tr>
+ <tr>
+ <td colspan="3" ><strong>Encryption</strong></td>
+ </tr>
+ <tr>
+ <td><code>chunk_size</code></td>
+ <td>Chunk size to use for encryption</td>
+ <td>50MB</td>
+ </tr>
+ <tr>
+ <td><code>concurrent_encryptions</code></td>
+ <td>Maximum number of files that can be concurrently encrypted</td>
+ <td>4</td>
+ </tr>
+ <tr>
+ <td><code>delete_encrypted_files</code></td>
+ <td>Whether to delete the encrypted files after upload is done. If you set this to false local disk usage will double, due to an encrypted copy of each file.</td>
+ <td>True.</td>
+ </tr>
+ <tr>
+ <td colspan="3" ><strong>Health Check</strong></td>
+ </tr>
+ <tr>
+ <td><code>concurrent_health_checks</code></td>
+ <td>Maximum number of VRS file healthchecks that can be run concurrently</td>
+ <td>2</td>
+ </tr>
+ <tr>
+ <td colspan="3" ><strong>Uploads</strong></td>
+ </tr>
+ <tr>
+ <td><code>backoff</code></td>
+ <td>The exponential back off factor for retries during failed uploads. The wait time between successive retries will increase with this factor.</td>
+ <td>1.5</td>
+ </tr>
+ <tr>
+ <td><code>interval</code></td>
+ <td>Base delay between retries.</td>
+ <td>20 secs</td>
+ </tr>
+ <tr>
+ <td><code>retries</code></td>
+ <td>Maximum number of retries before giving up.</td>
+ <td>10</td>
+ </tr>
+ <tr>
+ <td><code>concurrent_uploads</code></td>
+ <td>Maximum number of concurrent uploads.</td>
+ <td>4</td>
+ </tr>
+ <tr>
+ <td><code>max_chunk_size</code></td>
+ <td>Maximum chunk size that can be used during uploads.</td>
+ <td>100 MB</td>
+ </tr>
+ <tr>
+ <td><code>min_chunk_size</code></td>
+ <td>The minimum upload chunk size.</td>
+ <td>5 MB</td>
+ </tr>
+ <tr>
+ <td><code>smoothing_window_size</code></td>
+ <td>Size of the smoothing window to adjust the chunk size. This value defines the number of uploaded chunks that will be used to determine the next chunk size.</td>
+ <td>10</td>
+ </tr>
+ <tr>
+ <td><code>target_chunk_upload_secs</code></td>
+ <td>Target time to upload a single chunk. If the chunks in a smoothing window take longer, we reduce the chunk size. If it takes less time, we increase the chunk size.</td>
+ <td>3 secs</td>
+ </tr>
+ <tr>
+ <td colspan="3" ><strong>Query the MPS backend for MPS Status</strong></td>
+ </tr>
+ <tr>
+ <td><code>backoff</code></td>
+ <td>This the exponential back off factor for retries for failed queries. The wait time between successive retries will increase with this factor</td>
+ <td>1.5</td>
+ </tr>
+ <tr>
+ <td><code>interval</code></td>
+ <td>Base delay between retries</td>
+ <td>4 secs</td>
+ </tr>
+ <tr>
+ <td><code>retries</code></td>
+ <td>Maximum number of retries before giving up</td>
+ <td>3</td>
+ </tr>
+ <tr>
+ <td colspan="3" ><strong>Download</strong></td>
+ </tr>
+ <tr>
+ <td><code>backoff</code></td>
+ <td>This the exponential back off factor for retries during failed downloads. The wait time between successive retries will increase with this factor.</td>
+ <td>1.5</td>
+ </tr>
+ <tr>
+ <td><code>interval</code></td>
+ <td>Base delay between retries</td>
+ <td>20 secs</td>
+ </tr>
+ <tr>
+ <td><code>retries</code></td>
+ <td>Maximum number of retries before giving up</td>
+ <td>10</td>
+ </tr>
+ <tr>
+ <td><code>chunk_size</code></td>
+ <td>The chunk size to use for downloads</td>
+ <td>10MB</td>
+ </tr>
+ <tr>
+ <td><code>concurrent_downloads</code></td>
+ <td>Number of concurrent downloads</td>
+ <td>10</td>
+ </tr>
+ <tr>
+ <td><code>delete_zip</code></td>
+ <td>The server will send the results in a zip file. This flag controls whether to delete the zip file after extraction or not</td>
+ <td>True</td>
+ </tr>
+</table>
+
+
+<div id="clr"><br/></div>
+
+## Command line reference
+
+The MPS CLI has two distinct modes: single (process each recording individually) and multi (Multi-SLAM outputs for two or more recordings in a shared coordinate frame).
+
+
+```
+aria_mps single <options>
+```
+
+or
+
+```
+aria_mps multi <options>
+```
+
+
+### Help
+
+To see the available options and subcommands, use:
+
+```
+--help
+```
+
+or
+
+```
+-h
+```
+
+
+### Authentication
+
+
+#### Log in
+
+The first time you use the MPS CLI, you’ll be prompted to enter your username. Use the Project Aria credentials you use to sign into the Mobile Companion app. Follow the directions to either enter your password or complete the authentication via the https://work.meta.com/cli link, as directed by the CLI.
+
+To log in using the legacy Aria credentials, use the following command:
+
+```
+-u USERNAME -p PASSWORD
+```
+
+or
+
+ ```
+--username USERNAME --password PASSWORD
+```
+
+:::info Note
+`--password` only applies to legacy Aria accounts. Managed (MMA) accounts do not use a password — pass just `--username` and approve the login in your browser.
+:::
+
+If you have legacy Aria credentials, you can supply the username and password via CLI input. This is well suited to running MPS as part of a batch script or other automated workflows.
+
+If you have a managed (MMA) Aria account, pass just `--username`. The CLI shows a code and the https://work.meta.com/cli link — printed to the terminal in `--no-ui` mode, or shown in the UI otherwise — for you to approve the login in your browser. Once you have authenticated, the auth token is cached on the machine and you can run the MPS CLI as part of a script or other automated workflows.
+
+
+#### Token storage
+If the system keyring (macOS Keychain, Windows Credential Manager, or Linux Secret Service) is accessible, the login token is saved there automatically. This means that once you’ve authenticated, you can run the MPS CLI without having to re-enter your credentials.
+
+When the keyring is unavailable (for example on headless servers, containers, or CI/CD), the token is instead saved to an encrypted file at `~/.projectaria/auth_token.enc` (AES-256-GCM). The encryption key comes from one of two sources:
+
+* The `PROJECTARIA_TOKEN_KEY` environment variable. Set it to a strong secret (at least 12 characters) to save and load the token without any prompt — recommended for automated and CI workflows.
+* An interactive passphrase. If `PROJECTARIA_TOKEN_KEY` is not set, you'll be prompted to choose a passphrase (at least 12 characters) at login, and prompted for it again whenever the token needs to be decrypted (for example on a later run or at logout).
+
+In a non-interactive session with neither `PROJECTARIA_TOKEN_KEY` nor a passphrase available, the token is not saved and you'll need to log in again next time. See [Token Storage](/ark/projectaria-login/token-storage) for the full encrypted-file format and security model.
+
+When you unlock a saved token, a mistyped passphrase does not delete it — the encrypted file is kept so a single typo never discards a valid login, and you can simply try again. In `--no-ui` mode you get up to three attempts per run (a wrong or too-short passphrase uses up an attempt); after they are exhausted the encrypted file is kept so you can retry on a later run. It is removed only when it is structurally unusable (a malformed file, an unsupported format, or a payload that decrypts but is not a valid token). Providing a usable `PROJECTARIA_TOKEN_KEY` skips the passphrase prompt entirely.
+
+The encrypted file records which key source protected it — `PROJECTARIA_TOKEN_KEY` or an interactive passphrase — and loading enforces that source: an env-protected file can only be decrypted with the same `PROJECTARIA_TOKEN_KEY` value, and a passphrase-protected file only with the original passphrase (setting `PROJECTARIA_TOKEN_KEY` does not unlock it). If the original key material is no longer available, the CLI cannot reuse the saved token and asks you to log in again; the next successful login re-saves the token under the current source.
+
+To use the environment variable, export it before running the CLI:
+
+```
+export PROJECTARIA_TOKEN_KEY=<at least 12 characters>
+```
+
+:::note
+Anyone with both read access to the encrypted file and the passphrase (or `PROJECTARIA_TOKEN_KEY` value) can decrypt the token. On shared hosts, prefer the system keyring and treat the passphrase / env var as a secret.
+:::
+
+If you request MPS using `--no-ui` , you'll have the option to pass `--no-save-token`. It applies only to a fresh login via `--username`: the newly obtained token is kept in memory for that run, is not persisted to the keyring or the encrypted file, and is invalidated server-side once processing completes. When you are instead resuming a previously saved session, `--no-save-token` is a no-op — your cached token is left in place. It can only be used together with `--no-ui`.
+
+```
+--no-save-token
+```
+
+
+#### Log out
+
+Use the following command to invalidate the token server-side and remove it from the system, clearing it from both the keyring and the encrypted file. Next time you run the CLI, it will ask for your credentials again.
+
+```
+aria_mps logout
+```
+
+If the token is held only in a passphrase-protected encrypted file, you are prompted for the passphrase so the token can be decrypted for server-side invalidation (an env-protected file is decrypted automatically from `PROJECTARIA_TOKEN_KEY`, with no prompt). If no valid passphrase / key is provided, the encrypted file is kept and server-side logout is skipped — provide the passphrase / key and retry to log out fully.
+
+
+### Request options for any mode
+
+These options are shared between both modes.
+
+
+#### Define input path
+
+Provides the path for a directory or file that will be uploaded for processing. Where a directory is provided, all subdirectories will be scanned for VRS files. At least one input file must be provided. There is no limit of how many files or folders can be included in a single request.
+
+```
+-i INPUT
+```
+
+or
+
+```
+--input INPUT
+```
+
+
+#### Force the provided files to be reprocessed
+
+Force the server to reprocess all of the provided files, regardless of their current state on the server.
+
+```
+--force
+```
+
+
+#### Automatically retry processing if it fails
+
+By default the MPS server will retry processing data multiple times before generating a failure code. By adding this flag requests automatically retries again if the processing fails. This command is generally only worth using if you’ve done some debugging to warrant it.
+
+```
+--retry-failed
+```
+
+:::note
+If you retry 30 days after the recording was uploaded, you'll also need to re-upload the data.
+
+This flag has no effect on eye gaze. Eye gaze is always reprocessed rather than served from a previous request, so there is no failed past request for it to retry.
+:::
+
+
+
+#### Don’t show the UI
+
+Instead of the MPS CLI UI, you’ll see the raw outputs and processes in the command line.
+
+```
+--no-ui
+```
+
+:::note
+With `--no-ui`, pass `--username` (and `--password` for legacy accounts) to log in, or rely on a cached session from a previous login. Managed (MMA) accounts approve the login via the code and link printed to the terminal — no password is required.
+:::
+
+### Single Recording mode
+
+
+#### Select the MPS you wish to generate
+
+By default, the single-recording command requests Eye Gaze, SLAM, and Hand Tracking. All three services are supported for Aria Gen1 and Gen2 recordings, subject to the [recording profile requirements](/technical-specs/device/profile) for each service.
+
+Pass one or more space-separated values: `EYE_GAZE`, `SLAM`, or `HAND_TRACKING`. For example, request Eye Gaze and SLAM with:
+
+```
+--features EYE_GAZE SLAM
+```
+
+#### Provide an eye gaze calibration recording
+
+Supply an eye gaze calibration VRS file alongside the recording you are processing. When Eye Gaze is requested, the file is uploaded and linked to each applicable request. It is processed only to generate eye gaze calibration parameters.
+
+```
+--calib CALIB
+```
+
+For example:
+
+```
+aria_mps single -i ~/Downloads/Example/recording.vrs --calib ~/Downloads/Example/calibration.vrs
+```
+
+:::note
+This option is only available in single mode, and is optional.
+
+The path must be an existing `.vrs` file. If you pass several recordings in one command, the calibration recording is uploaded once and linked to each resulting request that submits Eye Gaze. A calibration file that also sits inside an `-i` folder is not processed as a recording in its own right.
+:::
+
+The CLI reports whether the file is marked as an eye gaze calibration recording, but does not require it — a file with no such marking is still uploaded, with a warning.
+
+A calibration is only consumed by eye gaze. If you pass `--calib` without `EYE_GAZE` in `--features`, the file is not uploaded at all and the CLI says so.

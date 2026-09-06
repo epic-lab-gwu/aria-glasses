@@ -1,0 +1,232 @@
+---
+sidebar_position: 1
+title: Getting Started
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+
+## Overview
+
+The Project Aria Machine Perceptions Services Command Line Interface (MPS CLI) is a command line tool used to request and receive [Machine Perception Services](/ark/mps). [MPS CLI Guide](/technical-specs/mps/mps_cli_guide) page provides basic information to get you started with the MPS CLI.
+
+The MPS inputs can be a file or directory, and multiple inputs can be listed in a single command.
+
+The MPS CLI has two modes:
+
+* Single
+    * Process each recording individually
+    * Output is always saved next to the input VRS file
+    * The most common way to request MPS
+* Multi
+    * Process two or more recordings together for Multi-SLAM
+    * Generate SLAM outputs for each recording in a shared coordinate frame
+
+
+:::tip Non-UI options available
+This tutorial uses the the MPS CLI UI, but all processes also work without using the UI and can be integrated into automated workflows. See the [Command Line Reference](/technical-specs/mps/mps_cli_guide) in the Technical Specs for more details.
+:::
+
+
+## Install Project Aria MPS
+
+Aria MPS is available as a Python package on PyPI.
+You can install it using pip.
+And we strongly recommend installing it under a python virtual environment:
+<Tabs groupId="operating-systems">
+<TabItem value="unix" label="Linux & macOS">
+```bash
+rm -rf $HOME/projectaria_tools_python_env
+python3 -m venv $HOME/projectaria_tools_python_env
+source $HOME/projectaria_tools_python_env/bin/activate
+
+python3 -m pip install projectaria-mps
+```
+</TabItem>
+<TabItem value="windows" label="Windows">
+Windows is not yet supported for Aria-Gen2.
+</TabItem>
+</Tabs>
+## Quick Start - Running the tool
+```bash
+aria_mps single -i <path to vrs file or directory> [options]
+```
+Note that if the above command emits some error, please refer to the [troubleshooting section](/ark/support/mps).
+
+Project Aria MPS CLI is only available if you install the pip installation version of Project Aria MPS. This installation has been designed to be simple to use, even if you are not familiar with programming languages.
+:::info Dependencies
+The Project Aria MPS pypi package automatically installs these packages:
+
+- [projectaria-tools](/research-tools/projectariatools/installation#installing)
+- [projectaria-vrs-health-check](/ark/vrs_health_check/installation#installing-vrs-health-check)
+- [projectaria-login](/ark/projectaria-login/installation) — handles authentication and secure [token storage](/ark/projectaria-login/token-storage)
+
+It also pulls in the shared `projectaria-commons` helper package (configuration, HTTP, and GraphQL utilities).
+:::
+
+## Supported Platforms
+| OS / Platform                 | OS / Distro Details                                                | Aria Gen2 Support | Supported Python Versions |
+| :---------------------------- | :----------------------------------------------------------------- | :----------------------------------------- | :------------------------ |
+| Linux (x64)                   | Ubuntu **22.04 LTS (jammy)** / **24.04 LTS (Noble Numbat)**, and recent Fedora releases. Requires **glibc 2.17 or newer** | ✅ Supported                              | 3.10 – 3.12               |
+| Linux (ARM64 / aarch64)       | —                                                                     | ❌ Not supported — VRS Health Check has no ARM64 wheel | —              |
+| macOS (Apple Silicon / ARM64) | macOS **14+ (Sonoma or newer)** on M1/M2/M3/M4                        | ✅ Supported                              | 3.10 – 3.12              |
+| macOS (Intel / x64)           | —                                                                     | ❌ Not supported                          | —               |
+| Windows (x64)                 | —                                                                     | 🚧 Planned                               | —              |
+
+:::note Older Linux distributions
+`projectaria-mps` is pure Python; the glibc floor comes from `projectaria-tools` and `projectaria-vrs-health-check`, both `manylinux_2_17`. Distributions as old as Ubuntu 20.04 LTS should therefore install, but only 22.04 and 24.04 are tested — older releases are untested rather than known-good.
+:::
+
+## Download the MPS CLI sample dataset
+
+To try out the following commands on VRS files:
+
+1. Download the [sample gen2 vrs file](https://www.projectaria.com/async/sample/download/?bucket=mps&filename=gen2_sample2.vrs)
+2. Move it to a directory called Example in your downloads directory
+
+:::info
+You may also wish to use your own recordings.
+:::
+
+## Request MPS for all VRS files in the “Example” directory and it’s subdirectories:
+
+```
+aria_mps single -i ~/Downloads/Example/
+```
+
+You'll be prompted to enter your username and then authenticate either via password on managed account login. Use the Project Aria credentials you use to sign into the Mobile Companion app.
+
+:::info Token storage
+After you log in, your authentication token is cached so you don't have to sign in every time. It's stored in your operating system keyring when one is available. On headless machines, containers, or CI where no keyring is available, the token is instead saved to an encrypted file at `~/.projectaria/auth_token.enc` (AES-256-GCM). In that case you'll be asked for a passphrase of at least 12 characters to encrypt the token (a passphrase prompt in the UI, or at the terminal in `--no-ui` mode), and for the same passphrase to decrypt it on the next run. To skip the prompt in automation, set the `PROJECTARIA_TOKEN_KEY` environment variable to a secret of at least 12 characters; it will be used as the encryption key instead.
+:::
+
+![MPS CLI UI for single mode](/img/docs-ark/mps/mps_cli_ui_single.png)
+
+### Providing an eye gaze calibration recording
+
+An eye gaze calibration recording is a VRS created by the Eye Gaze Calibration flow in the Aria Companion App for a specific wearer and pair of glasses. Download it from the glasses with the Client SDK. A matching calibration can improve Eye Gaze accuracy.
+
+In single mode you can optionally supply an eye gaze calibration VRS file with `--calib`:
+
+```
+aria_mps single -i ~/Downloads/Example/ --calib ~/Downloads/Example/calibration.vrs
+```
+
+When Eye Gaze is requested, the calibration file is uploaded and linked to each applicable request. It is processed only to generate eye gaze calibration parameters. See the [MPS CLI Guide](/technical-specs/mps/mps_cli_guide) for the full flag reference.
+
+The calibration recording is uploaded **once**, no matter how many recordings you pass, and the same uploaded recording is linked to each request that submits Eye Gaze. A dedicated calibration panel above the request table shows its file name, size and live upload progress:
+
+![Eye gaze calibration upload in progress](/img/docs-ark/mps/mps_calibration_uploading.png)
+
+Once the upload lands, the panel reports the uploaded recording and how many requests carry the link, and a `CALIB` column in the request table shows the link per recording:
+
+![Uploaded eye gaze calibration linked to an MPS request](/img/docs-ark/mps/mps_calibration_uploaded.png)
+
+The `CALIB` column shows `Linked` only for a recording that submits an Eye Gaze request. Other rows show `-`, so the linked count can be lower than the number of recordings.
+
+:::warning Keep the calibration recording
+Keep a local copy of the calibration VRS. To reprocess recordings with the same calibration, pass that file again with `--calib`.
+:::
+
+:::warning Match recordings to their calibration
+Use the calibration recorded for the same wearer and pair of glasses. The CLI does not verify this association; a mismatch may reduce Eye Gaze accuracy.
+:::
+
+The CLI also checks whether the file you passed really is an eye gaze calibration recording. A recording captured through the Companion App's eye gaze calibration flow is marked as such, and the panel shows a tick next to its name. If the file carries no such marking, the panel says so and **the upload still proceeds**:
+
+![Unmarked eye gaze calibration recording warning](/img/docs-ark/mps/mps_calibration_unmarked.png)
+
+This is advice, not a rejection. A calibration recording captured by something other than the Companion App carries no marking, so the CLI reports what it sees and lets you decide rather than blocking the submission. The same message is written to the log file, so it is visible when running with `--no-ui`.
+
+If the calibration file lives inside a folder you passed to `-i`, it is excluded from the recordings to be processed — it is uploaded as the calibration only, not submitted for MPS features in its own right.
+
+A calibration is only ever consumed by eye gaze. If you pass `--calib` but do not ask for `EYE_GAZE` in `--features`, nothing in the run can use the file, so it is **not uploaded** and the panel reports that instead of an upload:
+
+![Calibration not uploaded because eye gaze was not requested](/img/docs-ark/mps/mps_calibration_not_uploaded.png)
+
+The `CALIB` column is dropped from the request table in that case, since no recording will ever carry a link.
+
+### MPS output
+
+Once the request has been processed, the MPS output will be downloaded next to the original VRS file. In this example, a recording in the Example directory called gen2_sample2.vrs was used to generate MPS.
+
+```
+    └── Example
+        ├── mps_gen2_sample2_vrs
+        │    ├── eye_gaze
+        │    │   ├── calibration_params.json
+        │    │   ├── general_eye_gaze.csv
+        │    │   ├── personalized_eye_gaze.csv
+        │    │   └── summary.json
+        │    ├── hand_tracking
+        │    │   ├── hand_tracking_results.csv
+        │    │   └── summary.json
+        │    ├── slam
+        │    │   ├── closed_loop_trajectory.csv
+        │    │   ├── online_calibration.jsonl
+        │    │   ├── open_loop_trajectory.csv
+        │    │   ├── semidense_observations.csv.gz
+        │    │   ├── semidense_points.csv.gz
+        │    │   └── summary.json
+        │    └── vrs_health_check.json
+        └── gen2_sample2.vrs
+```
+`calibration_params.json` and `personalized_eye_gaze.csv` are generated when an eye gaze calibration is used.
+
+Go to [MPS Data Format Basics](/technical-specs/mps/data_formats/slam/basics) for more details about the folder structure.
+
+:::caution Invalid or empty result (error code 120)
+If a request fails with **download validation error code `120`** — for example a message like `Server returned an invalid/empty result (1 byte) for results.zip` (the name is the downloaded file, not the feature) — the server returned a corrupt, empty, or truncated result for a recording it had previously marked as succeeded.
+
+To recover, resubmit the request with the `--force` flag so the VRS file is reprocessed from scratch and a fresh result is generated:
+
+```
+aria_mps single -i <path to vrs file or directory> --force
+```
+:::
+
+## Authentication and token storage
+
+The first time you run the MPS CLI you'll authenticate with your Project Aria credentials. After a successful login, the auth token is cached so you don't have to log in every time:
+
+* When a system keyring is available, the token is stored there automatically.
+* When no keyring is available (for example on headless servers, containers, or CI), the token is instead saved to an encrypted file at `~/.projectaria/auth_token.enc` (AES-256-GCM). By default you'll be prompted for an **encryption passphrase** (at least 12 characters) at login, and for the same passphrase again on later runs to decrypt the token.
+
+To skip the passphrase prompt in automated environments, set the `PROJECTARIA_TOKEN_KEY` environment variable (at least 12 characters) before running the CLI. When set, it is used automatically to encrypt and decrypt the token file with no prompt:
+
+```
+export PROJECTARIA_TOKEN_KEY=<at least 12 characters>
+```
+
+:::note
+Anyone with both read access to the encrypted file and the passphrase (or `PROJECTARIA_TOKEN_KEY` value) can decrypt the token. On shared hosts, prefer the system keyring and treat the passphrase / env var as a secret.
+:::
+
+When running headless (`--no-ui`), you can pass `--no-save-token` to avoid persisting the token; the ephemeral token is invalidated server-side when the run finishes.
+
+### Log out
+
+To invalidate your session server-side and remove the cached token from both the keyring and the encrypted file:
+
+```
+aria_mps logout
+```
+
+If the token is held only in a passphrase-protected encrypted file, you'll be prompted for the passphrase so it can be decrypted for server-side invalidation (an env-protected file is decrypted automatically from `PROJECTARIA_TOKEN_KEY`). If no valid passphrase / key is provided, the encrypted file is kept and server-side logout is skipped — provide the passphrase / key and retry to log out fully.
+
+
+## Exit the MPS CLI
+
+To quit the MPS CLI, press `CTRL + Q`. The CLI will ask for confirmation before quitting.
+
+* If you quit the request tool while the files are uploading the uploads will stop.
+* If you resubmit the request the uploads will resume where they left off, progress won’t be lost for upto 24 hrs.
+
+If you quit the request tool once the files have been uploaded, the MPS processes will continue. Once processing is complete, and the request tool is open, MPS files will be automatically downloaded to your VRS files’ location.
+
+
+## Working with MPS data
+
+You may find the following resources helpful when working with MPS data:
+* [MPS Data Formats](/technical-specs/mps/data_formats/slam/basics)
+* [Visualize MPS Using Python](https://github.com/facebookresearch/projectaria_tools/blob/2.3.0/examples/Gen2/python_notebooks/Tutorial_5_mps_basics.ipynb)
